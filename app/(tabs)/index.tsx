@@ -8,9 +8,10 @@ import { VendorCard } from '@/components/home/VendorCard';
 import { useAuth } from '@/context/AuthContext';
 import { useLocation } from '@/context/LocationContext';
 import { getMe } from '@/services/customerService';
+import { listCustomerReviews } from '@/services/reviewService';
 import { searchVendors, VendorResult } from '@/services/vendorSearchService';
 import { useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { ActivityIndicator, FlatList, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 export default function HomeScreen() {
@@ -18,6 +19,7 @@ export default function HomeScreen() {
   const { city: locationCity } = useLocation();
   const router = useRouter();
   const [vendors, setVendors] = useState<VendorResult[]>([]);
+  const [userReviews, setUserReviews] = useState<any[]>([]);
   const [effectiveCity, setEffectiveCity] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -103,6 +105,15 @@ export default function HomeScreen() {
       }
 
       console.log('[HOMESCREEN] Total vendors to display:', results.length);
+      
+      // Step 4: Fetch user reviews to supplement ratings
+      if (accessToken) {
+        try {
+          const revRes = await listCustomerReviews(accessToken);
+          if (revRes.success) setUserReviews(revRes.reviews || []);
+        } catch (e) { console.warn('Failed to fetch user reviews for homescreen', e); }
+      }
+
       setVendors(results);
     } catch (error) {
       console.error('Failed to fetch verified vendors:', error);
@@ -141,17 +152,25 @@ export default function HomeScreen() {
             keyExtractor={(item) => item.business_id}
             contentContainerStyle={styles.vendorList}
             style={styles.vendorFlatList}
-            renderItem={({ item }) => (
-              <VendorCard
-                image={item.cover_photo_url || item.profile_image}
-                title={item.business_name}
-                location={item.city || 'Location not specified'}
-                tag={item.business_categories[0]?.name}
-                rating={item.calculated_rating}
-                isVerified={item.verified}
-                vendorId={item.business_id}
-              />
-            )}
+            renderItem={({ item }) => {
+              // Calculate effective rating for the card
+              const userReview = userReviews.find(r => r.business_id === item.business_id);
+              const backendRating = parseFloat(item.calculated_rating?.toString() || '0');
+              const displayRating = (backendRating === 0 && userReview) ? userReview.rating : item.calculated_rating;
+
+              return (
+                <VendorCard
+                  image={item.cover_photo_url || item.profile_image}
+                  title={item.business_name}
+                  location={item.city || 'Location not specified'}
+                  tag={item.business_categories[0]?.name}
+                  rating={displayRating}
+                  isVerified={item.verified}
+                  vendorId={item.business_id}
+                  fullVendor={item}
+                />
+              );
+            }}
           />
         )}
       </ScrollView>

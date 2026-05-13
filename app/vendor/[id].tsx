@@ -18,7 +18,7 @@ import { Image } from 'expo-image';
 import { useAuth } from '@/context/AuthContext';
 import { searchVendors, VendorResult } from '@/services/vendorSearchService';
 import { getBusinessPricing, Package } from '@/services/pricingService';
-import { listBusinessReviews } from '@/services/reviewService';
+import { listBusinessReviews, listCustomerReviews } from '@/services/reviewService';
 import { Review } from '@/types/review.types';
 import ReviewModal from '../../components/vendor/ReviewModal';
 import QuoteModal from '../../components/vendor/QuoteModal';
@@ -49,6 +49,7 @@ export default function VendorDetailScreen() {
   const [vendor, setVendor] = useState<VendorResult | null>(null);
   const [packages, setPackages] = useState<Package[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
+  const [userReview, setUserReview] = useState<Review | null>(null);
   const [loading, setLoading] = useState(true);
   const [isReviewModalVisible, setIsReviewModalVisible] = useState(false);
   const [isQuoteModalVisible, setIsQuoteModalVisible] = useState(false);
@@ -63,17 +64,37 @@ export default function VendorDetailScreen() {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const [vendorRes, pricingRes, reviewsRes] = await Promise.all([
+      const promises: Promise<any>[] = [
         searchVendors({ mode: 'filter', filters: { businessIds: [id] } }),
         getBusinessPricing(id),
         listBusinessReviews(id),
-      ]);
+      ];
+
+      // Add customer reviews fetch if logged in
+      if (accessToken) {
+        promises.push(listCustomerReviews(accessToken));
+      }
+
+      const [vendorRes, pricingRes, reviewsRes, customerReviewsRes] = await Promise.all(promises);
 
       if (vendorRes.results.length > 0) {
         setVendor(vendorRes.results[0]);
       }
       setPackages(pricingRes.packages);
-      setReviews(reviewsRes.reviews || []);
+      
+      const allReviews = reviewsRes.reviews || [];
+      setReviews(allReviews);
+
+      // If we have customer reviews, we can see if this vendor was already reviewed by the user
+      if (customerReviewsRes?.success && customerReviewsRes.reviews) {
+        const existingReview = customerReviewsRes.reviews.find((r: Review) => r.business_id === id);
+        if (existingReview) {
+          console.log('[VENDOR DETAIL] Found existing review by user for this vendor');
+          setUserReview(existingReview);
+        } else {
+          setUserReview(null);
+        }
+      }
     } catch (error) {
       console.error('Failed to fetch vendor data:', error);
     } finally {
@@ -248,7 +269,7 @@ export default function VendorDetailScreen() {
           ))}
         </View>
 
-        {/* Reviews Section */}
+          {/* Reviews Section */}
         <View style={styles.reviewsSection}>
           <View style={styles.reviewsHeader}>
             <Text style={styles.sectionTitle}>Reviews & Ratings</Text>
@@ -269,10 +290,28 @@ export default function VendorDetailScreen() {
                 />
               ))}
             </View>
-            <Text style={styles.verifiedBookingsText}>Based on {vendor.review_count || 0} verified bookings</Text>
+            <Text style={styles.verifiedBookingsText}>Based on {vendor.review_count || 0} verified reviews</Text>
           </View>
 
-          {featuredReview && (
+          {/* User's Own Review */}
+          {userReview && (
+            <View style={styles.userReviewCard}>
+              <View style={styles.userReviewHeader}>
+                <Text style={styles.yourReviewTitle}>Your Review</Text>
+                <View style={styles.userRatingBadge}>
+                  <Ionicons name="star" size={14} color="#F5A623" />
+                  <Text style={styles.userRatingText}>{userReview.rating.toFixed(1)}</Text>
+                </View>
+              </View>
+              <Text style={styles.reviewText}>"{userReview.review_text}"</Text>
+              <Text style={styles.reviewDate}>
+                Posted on {new Date(userReview.created_at).toLocaleDateString()}
+              </Text>
+            </View>
+          )}
+
+          {/* Featured Review (Other users) - only show if it's not the user's own review */}
+          {featuredReview && (!userReview || featuredReview.id !== userReview.id) && (
             <View style={styles.featuredReview}>
               <View style={styles.reviewerHeader}>
                 <View style={styles.reviewerInfo}>
@@ -307,8 +346,8 @@ export default function VendorDetailScreen() {
             style={styles.addReviewButton} 
             onPress={() => setIsReviewModalVisible(true)}
           >
-            <Ionicons name="create-outline" size={20} color="#003366" />
-            <Text style={styles.addReviewText}>Write a Review</Text>
+            <Ionicons name={userReview ? "create" : "create-outline"} size={20} color="#003366" />
+            <Text style={styles.addReviewText}>{userReview ? 'Edit Your Review' : 'Write a Review'}</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -334,6 +373,7 @@ export default function VendorDetailScreen() {
         accessToken={accessToken}
         authUser={user}
         onSuccess={fetchData}
+        initialReview={userReview}
       />
 
       <QuoteModal
@@ -683,6 +723,45 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     color: '#003366',
+  },
+  userReviewCard: {
+    backgroundColor: '#F0F5FF',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 24,
+    borderWidth: 1,
+    borderColor: '#D1E0FF',
+  },
+  userReviewHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  yourReviewTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#003366',
+  },
+  userRatingBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    gap: 4,
+  },
+  userRatingText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#1A1A1A',
+  },
+  reviewDate: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 8,
+    fontWeight: '500',
   },
   bottomBarContainer: {
     backgroundColor: '#fff',

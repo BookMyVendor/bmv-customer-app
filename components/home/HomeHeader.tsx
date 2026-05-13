@@ -24,9 +24,7 @@ export const HomeHeader = () => {
           <Text style={styles.locationText}>{city || 'Select City'}</Text>
           <Ionicons name="chevron-down" size={14} color="#666" />
         </TouchableOpacity>
-        <TouchableOpacity style={styles.iconButton}>
-          <Ionicons name="notifications-outline" size={24} color="#000" />
-        </TouchableOpacity>
+
       </View>
 
       <CityPickerModal visible={modalVisible} onClose={() => setModalVisible(false)} />

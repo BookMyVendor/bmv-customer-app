@@ -3,6 +3,46 @@ import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { Link } from 'expo-router';
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://49.248.202.218:5000/';
+
+function getMediaUrl(url: string | null): string | null {
+  if (!url || url.trim() === '') return null;
+  if (url.startsWith('http://') || url.startsWith('https://')) return url;
+  return `${API_URL}${url.startsWith('/') ? url.slice(1) : url}`;
+}
+
+const getInitials = (name: string) => {
+  if (!name) return 'V';
+  const parts = name.trim().split(/\s+/);
+  if (parts.length >= 2) {
+    return (parts[0][0] + parts[1][0]).toUpperCase();
+  }
+  return name.slice(0, 2).toUpperCase();
+};
+
+const DynamicVendorImage = ({ vendor, style }: any) => {
+  const [hasError, setHasError] = React.useState(false);
+  const imageUrl = getMediaUrl(vendor.cover_photo_url || vendor.profile_image);
+  const initials = getInitials(vendor.business_name);
+
+  if (!imageUrl || hasError) {
+    return (
+      <View style={[style, styles.initialsContainer]}>
+        <Text style={styles.initialsText}>{initials}</Text>
+      </View>
+    );
+  }
+
+  return (
+    <Image
+      source={{ uri: imageUrl }}
+      style={style}
+      contentFit="cover"
+      transition={300}
+      onError={() => setHasError(true)}
+    />
+  );
+};
 
 export const QuickToolCard = ({ icon, value, label, actionText, href }: any) => (
   <Link href={href || "#"} asChild>
@@ -20,13 +60,15 @@ export const QuickToolCard = ({ icon, value, label, actionText, href }: any) => 
   </Link>
 );
 
-export const AIVendorMatchCard = ({ vendorCount = 0 }: { vendorCount?: number }) => {
+export const AIVendorMatchCard = ({ vendorCount = 0, topVendors = [] }: { vendorCount?: number, topVendors?: any[] }) => {
   return (
     <View style={styles.vendorMatchCard}>
       <View style={styles.vendorMatchHeader}>
         <View style={styles.vendorMatchTitles}>
           <Text style={styles.vendorMatchTitle}>AI Vendor Match</Text>
-          <Text style={styles.vendorMatchSubtitle}>{vendorCount > 0 ? `${vendorCount} Top picks for your style` : 'Top picks for your style'}</Text>
+          <Text style={styles.vendorMatchSubtitle}>
+            {vendorCount > 0 ? `${vendorCount} Top picks for your style` : 'Top picks for your style'}
+          </Text>
         </View>
         <TouchableOpacity style={styles.expandButton}>
           <Ionicons name="expand-outline" size={20} color="#003366" />
@@ -34,24 +76,45 @@ export const AIVendorMatchCard = ({ vendorCount = 0 }: { vendorCount?: number })
       </View>
       
       <View style={styles.vendorImageRow}>
-        <View style={styles.vendorImageContainer}>
-          <Image 
-            source="https://images.unsplash.com/photo-1519167758481-83f550bb49b3?auto=format&fit=crop&q=80&w=400"
-            style={styles.vendorImage}
-          />
-          <View style={styles.matchBadge}>
-            <Ionicons name="star" size={12} color="#F59E0B" />
-            <Text style={styles.matchBadgeText}>98% Match</Text>
-          </View>
-        </View>
-        <View style={styles.vendorImageContainer}>
-          <Image 
-            source="https://images.unsplash.com/photo-1542314831-068cd1dbfeeb?auto=format&fit=crop&q=80&w=400"
-            style={styles.vendorImage}
-          />
-        </View>
+        {topVendors.length > 0 ? (
+          topVendors.slice(0, 2).map((vendor, index) => {
+            const rating = parseFloat(vendor.calculated_rating || '0');
+            // If rating is 0, show a high match anyway (AI selection)
+            const matchPct = rating > 0 ? Math.round(rating * 20) : (95 + index);
+            
+            return (
+              <View key={vendor.business_id || index} style={styles.vendorImageContainer}>
+                <DynamicVendorImage vendor={vendor} style={styles.vendorImage} />
+                {index === 0 && (
+                  <View style={styles.matchBadge}>
+                    <Ionicons name="star" size={12} color="#F59E0B" />
+                    <Text style={styles.matchBadgeText}>{matchPct}% Match</Text>
+                  </View>
+                )}
+              </View>
+            );
+          })
+        ) : (
+          <>
+            <View style={styles.vendorImageContainer}>
+              <Image 
+                source="https://images.unsplash.com/photo-1519167758481-83f550bb49b3?auto=format&fit=crop&q=80&w=400"
+                style={styles.vendorImage}
+              />
+              <View style={styles.matchBadge}>
+                <Ionicons name="star" size={12} color="#F59E0B" />
+                <Text style={styles.matchBadgeText}>98% Match</Text>
+              </View>
+            </View>
+            <View style={styles.vendorImageContainer}>
+              <Image 
+                source="https://images.unsplash.com/photo-1542314831-068cd1dbfeeb?auto=format&fit=crop&q=80&w=400"
+                style={styles.vendorImage}
+              />
+            </View>
+          </>
+        )}
       </View>
-
 
       <Link href="/ai-vendor-match" asChild>
         <TouchableOpacity style={styles.analysisButton}>
@@ -394,5 +457,15 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
     color: '#003366',
+  },
+  initialsContainer: {
+    backgroundColor: '#003366',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  initialsText: {
+    color: '#fff',
+    fontSize: 32,
+    fontWeight: '800',
   },
 });

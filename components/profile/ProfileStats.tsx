@@ -1,27 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 
-const STATS = [
-  { label: 'SAVED VENDORS', value: '12' },
-  { label: 'BOOKINGS', value: '5' },
-  { label: 'REVIEWS', value: '3' },
-];
-
-export const ProfileStats = () => {
-  return (
-    <View style={styles.container}>
-      {STATS.map((stat, index) => (
-        <View key={stat.label} style={[
-          styles.statCard,
-          index !== STATS.length - 1 && styles.borderRight
-        ]}>
-          <Text style={styles.value}>{stat.value}</Text>
-          <Text style={styles.label}>{stat.label}</Text>
-        </View>
-      ))}
-    </View>
-  );
-};
 
 const styles = StyleSheet.create({
   container: {

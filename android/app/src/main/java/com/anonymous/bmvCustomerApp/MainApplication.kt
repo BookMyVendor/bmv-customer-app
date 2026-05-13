@@ -1,4 +1,4 @@
-package com.anonymous.bmvCustomerApp
+package com.bnt.bmvCustomerApp
 
 import android.app.Application
 import android.content.res.Configuration

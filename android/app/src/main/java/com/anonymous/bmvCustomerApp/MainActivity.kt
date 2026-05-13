@@ -1,4 +1,4 @@
-package com.anonymous.bmvCustomerApp
+package com.bnt.bmvCustomerApp
 import expo.modules.splashscreen.SplashScreenManager
 
 import android.os.Build

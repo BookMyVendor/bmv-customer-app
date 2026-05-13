@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -15,8 +15,9 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { Image } from 'expo-image';
-import { submitCustomerReview, uploadReviewImages } from '@/services/reviewService';
+import { Review, SubmitCustomerReviewRequest } from '@/types/review.types';
 import { VerifyOtpResponse } from '@/types/auth.types';
+import { submitCustomerReview, uploadReviewImages } from '@/services/reviewService';
 
 interface ReviewModalProps {
   visible: boolean;
@@ -26,6 +27,7 @@ interface ReviewModalProps {
   accessToken: string | null;
   authUser: VerifyOtpResponse['user'] | null;
   onSuccess: () => void;
+  initialReview?: Review | null;
 }
 
 export default function ReviewModal({
@@ -36,11 +38,25 @@ export default function ReviewModal({
   accessToken,
   authUser,
   onSuccess,
+  initialReview,
 }: ReviewModalProps) {
   const [rating, setRating] = useState(0);
   const [reviewText, setReviewText] = useState('');
   const [images, setImages] = useState<ImagePicker.ImagePickerAsset[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (visible) {
+      if (initialReview) {
+        setRating(initialReview.rating);
+        setReviewText(initialReview.review_text || '');
+      } else {
+        setRating(0);
+        setReviewText('');
+      }
+      setImages([]);
+    }
+  }, [visible, initialReview]);
 
   const pickImages = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -71,16 +87,20 @@ export default function ReviewModal({
 
     try {
       setIsSubmitting(true);
-      const response = await submitCustomerReview(
-        {
-          business_id: businessId,
-          vendor_id: vendorId,
-          rating,
-          review_text: reviewText,
-          customer_id: authUser?.id || '',
-        },
-        accessToken
-      );
+      
+      const requestData: SubmitCustomerReviewRequest = {
+        business_id: businessId,
+        vendor_id: vendorId,
+        rating,
+        review_text: reviewText,
+        customer_id: authUser?.id || '',
+      };
+
+      if (initialReview?.id) {
+        requestData.review_id = initialReview.id;
+      }
+
+      const response = await submitCustomerReview(requestData, accessToken);
 
       if (response.success && images.length > 0) {
         const files = images.map((img) => {
@@ -90,10 +110,10 @@ export default function ReviewModal({
             type: img.mimeType || 'image/jpeg',
           } as any;
         });
-        await uploadReviewImages(response.reviewId, files, accessToken);
+        await uploadReviewImages(response.reviewId || initialReview?.id, files, accessToken);
       }
 
-      Alert.alert('Success', 'Your review has been submitted');
+      Alert.alert('Success', initialReview ? 'Your review has been updated' : 'Your review has been submitted');
       onSuccess();
       handleClose();
     } catch (error) {
@@ -105,9 +125,6 @@ export default function ReviewModal({
   };
 
   const handleClose = () => {
-    setRating(0);
-    setReviewText('');
-    setImages([]);
     onClose();
   };
 

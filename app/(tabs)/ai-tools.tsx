@@ -10,7 +10,7 @@ import { ScrollView, StyleSheet, Text, View, RefreshControl, ActivityIndicator }
 import { useAuth } from '@/context/AuthContext';
 import { listGuests, getOrCreateGuestList } from '@/services/guestService';
 import { listChecklists } from '@/services/checklistService';
-import { listWeddingBudgetPlans } from '@/services/weddingBudgetService';
+import { listWeddingBudgetPlans, getWeddingBudgetPlanCategories } from '@/services/weddingBudgetService';
 import { searchVendors } from '@/services/vendorSearchService';
 import { useLocation } from '@/context/LocationContext';
 
@@ -25,7 +25,8 @@ export default function AIToolsScreen() {
     vendors: 0,
     budget: 0,
     budgetLabel: 'Catering Allocation',
-    budgetPercent: 35
+    budgetPercent: 35,
+    topVendors: [] as any[]
   });
 
   const loadData = useCallback(async (isRefresh = false) => {
@@ -62,24 +63,78 @@ export default function AIToolsScreen() {
         const bRes = await listWeddingBudgetPlans(accessToken);
         if (bRes.success && bRes.plans.length > 0) {
           const plan = bRes.plans[0];
-          newStats.budget = plan.total_budget || 0;
-          // You could calculate actual first category allocation here
-          newStats.budgetPercent = 40; // Example dynamic update
-          newStats.budgetLabel = 'Primary Allocation';
+          const total = plan.total_budget || 0;
+          newStats.budget = total;
+
+          // Fetch categories to calculate ACTUAL allocated amount (more reliable than plan.remaining)
+          const catRes = await getWeddingBudgetPlanCategories({ plan_id: plan.id }, accessToken);
+          if (catRes.success) {
+            const allocated = catRes.categories.reduce((sum, cat) => sum + (parseFloat(cat.amount?.toString() || '0')), 0);
+            if (total > 0) {
+              newStats.budgetPercent = Math.round((allocated / total) * 100);
+              newStats.budgetLabel = 'Budget Allocated';
+            } else {
+              newStats.budgetPercent = 0;
+              newStats.budgetLabel = 'Set your budget';
+            }
+            console.log(`[AI TOOLS] Budget progress: ${allocated}/${total} (${newStats.budgetPercent}%)`);
+          }
         }
       } catch (e) { console.error('Budget stats error:', e); }
 
       // 4. Fetch Vendors (in current city)
       try {
-        const vRes = await searchVendors({
-          mode: 'filter',
-          filters: { city: city ? [city] : undefined },
-          limit: 10
-        });
-        if (vRes.success) {
-          newStats.vendors = vRes.count || vRes.results.length;
+        console.log('[AI TOOLS] Fetching vendors for city:', city);
+        // Try searching with popular categories to ensure same-service results
+        const popularCategories = ['Caterers', 'Decorators', 'Photographers', 'Venues'];
+        let foundSameService = false;
+
+        for (const cat of popularCategories) {
+          const vRes = await searchVendors({
+            mode: 'filter',
+            filters: { 
+              city: city ? [city] : undefined,
+              serviceType: [cat]
+            },
+            limit: 5
+          });
+
+          if (vRes && vRes.results && vRes.results.length >= 2) {
+            newStats.vendors = vRes.count;
+            newStats.topVendors = vRes.results.slice(0, 2);
+            console.log(`[AI TOOLS] Found 2+ vendors for category: ${cat}`);
+            foundSameService = true;
+            break;
+          }
         }
-      } catch (e) { console.error('Vendor stats error:', e); }
+
+        // If no same-service found in city, try global search for same-service
+        if (!foundSameService) {
+          for (const cat of popularCategories) {
+            const vRes = await searchVendors({
+              mode: 'filter',
+              filters: { serviceType: [cat] },
+              limit: 5
+            });
+            if (vRes && vRes.results && vRes.results.length >= 2) {
+              newStats.topVendors = vRes.results.slice(0, 2);
+              newStats.vendors = vRes.count;
+              console.log(`[AI TOOLS] Global fallback: Found 2+ vendors for category: ${cat}`);
+              foundSameService = true;
+              break;
+            }
+          }
+        }
+
+        // Final fallback: just get top 2 of whatever matches
+        if (!foundSameService) {
+          const vRes = await searchVendors({ mode: 'filter', filters: {}, limit: 10 });
+          if (vRes && vRes.results) {
+            newStats.topVendors = vRes.results.slice(0, 2);
+            newStats.vendors = vRes.count;
+          }
+        }
+      } catch (e) { console.error('[AI TOOLS] Vendor fetch failed:', e); }
 
       setStats(newStats);
     } catch (err) {
@@ -143,7 +198,7 @@ export default function AIToolsScreen() {
 
             {/* Main AI Tools */}
             <View style={styles.mainTools}>
-              <AIVendorMatchCard vendorCount={stats.vendors} />
+              <AIVendorMatchCard vendorCount={stats.vendors} topVendors={stats.topVendors} />
               <AIBudgetPlannerCard
                 totalBudget={stats.budget}
                 allocation={stats.budgetPercent}

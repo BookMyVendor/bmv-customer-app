@@ -7,18 +7,24 @@ import { signOut } from '@/services/authService';
 interface MenuItemProps {
   icon: keyof typeof Ionicons.glyphMap;
   label: string;
+  subtitle: string;
+  iconBgColor: string;
+  iconColor: string;
   isLast?: boolean;
   destructive?: boolean;
   onPress?: () => void;
 }
 
-const MenuItem: React.FC<MenuItemProps> = ({ icon, label, isLast, destructive, onPress }) => (
+const MenuItem: React.FC<MenuItemProps> = ({ icon, label, subtitle, iconBgColor, iconColor, isLast, destructive, onPress }) => (
   <TouchableOpacity style={[styles.menuItem, !isLast && styles.borderBottom]} onPress={onPress}>
-    <View style={[styles.iconWrapper, destructive && styles.destructiveIcon]}>
-      <Ionicons name={icon} size={20} color={destructive ? '#FF4B4B' : '#003366'} />
+    <View style={[styles.iconWrapper, { backgroundColor: iconBgColor }]}>
+      <Ionicons name={icon} size={20} color={iconColor} />
     </View>
-    <Text style={[styles.menuLabel, destructive && styles.destructiveText]}>{label}</Text>
-    <Ionicons name="chevron-forward" size={18} color="#CCC" />
+    <View style={styles.textContainer}>
+      <Text style={[styles.menuLabel, destructive && styles.destructiveText]}>{label}</Text>
+      <Text style={styles.menuSubtitle}>{subtitle}</Text>
+    </View>
+    <Ionicons name="chevron-forward" size={18} color="#D1D5DB" />
   </TouchableOpacity>
 );
 
@@ -30,24 +36,16 @@ export const ProfileMenu = () => {
       'Log Out',
       'Are you sure you want to log out?',
       [
-        {
-          text: 'Cancel',
-          style: 'cancel',
-        },
+        { text: 'Cancel', style: 'cancel' },
         {
           text: 'Log Out',
           style: 'destructive',
           onPress: async () => {
             try {
-              console.log('[PROFILE MENU] Attempting to log out');
               await signOut();
-              console.log('[PROFILE MENU] Logged out successfully, navigating to login');
               router.dismissAll();
               router.replace('/login');
             } catch (error) {
-              console.error('[PROFILE MENU] Logout failed, navigating to login anyway');
-              const errorMessage = error instanceof Error ? error.message : 'Failed to log out';
-              console.error('[PROFILE MENU] Error:', errorMessage);
               router.dismissAll();
               router.replace('/login');
             }
@@ -59,18 +57,34 @@ export const ProfileMenu = () => {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.sectionTitle}>ACCOUNT ACTIVITY</Text>
-      <View style={styles.group}>
-        <MenuItem icon="calendar-outline" label="My Bookings" />
-        <MenuItem icon="heart-outline" label="Saved Vendors" />
-        <MenuItem icon="card-outline" label="Payment Methods" isLast />
-      </View>
-
-      <Text style={styles.sectionTitle}>PREFERENCES & SUPPORT</Text>
-      <View style={styles.group}>
-        <MenuItem icon="settings-outline" label="Settings" />
-        <MenuItem icon="help-circle-outline" label="Support & FAQ" />
-        <MenuItem icon="log-out-outline" label="Log Out" destructive isLast onPress={handleLogout} />
+      <Text style={styles.sectionTitle}>Account & Activity</Text>
+      <View style={styles.card}>
+        <MenuItem 
+          icon="heart-outline" 
+          label="Saved Vendors" 
+          subtitle="View your saved vendors"
+          iconBgColor="#EEF2FF"
+          iconColor="#4F46E5"
+          onPress={() => router.push('/saved-vendors')}
+        />
+        <MenuItem 
+          icon="star-outline" 
+          label="My Reviews" 
+          subtitle="Reviews you've written"
+          iconBgColor="#F3E8FF"
+          iconColor="#7E22CE"
+          onPress={() => router.push('/my-reviews')}
+        />
+        <MenuItem 
+          icon="log-out-outline" 
+          label="Log Out" 
+          subtitle="Sign out from your account"
+          iconBgColor="#FEE2E2"
+          iconColor="#EF4444"
+          destructive
+          isLast 
+          onPress={handleLogout} 
+        />
       </View>
     </View>
   );
@@ -78,50 +92,56 @@ export const ProfileMenu = () => {
 
 const styles = StyleSheet.create({
   container: {
-    paddingHorizontal: 24,
+    paddingHorizontal: 16,
     paddingBottom: 40,
   },
   sectionTitle: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: '#999',
-    letterSpacing: 1,
-    marginTop: 24,
-    marginBottom: 12,
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#1F2937',
+    marginBottom: 16,
   },
-  group: {
-    backgroundColor: '#F8F9FB',
+  card: {
+    backgroundColor: '#fff',
     borderRadius: 20,
-    overflow: 'hidden',
+    paddingHorizontal: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 12,
+    elevation: 3,
   },
   menuItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 16,
+    paddingVertical: 16,
   },
   borderBottom: {
     borderBottomWidth: 1,
-    borderBottomColor: '#FFF',
+    borderBottomColor: '#F3F4F6',
   },
   iconWrapper: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: '#fff',
+    width: 44,
+    height: 44,
+    borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 16,
   },
-  menuLabel: {
+  textContainer: {
     flex: 1,
+  },
+  menuLabel: {
     fontSize: 15,
     fontWeight: '600',
-    color: '#333',
+    color: '#111827',
+    marginBottom: 2,
   },
-  destructiveIcon: {
-    backgroundColor: '#FFF0F0',
+  menuSubtitle: {
+    fontSize: 12,
+    color: '#6B7280',
   },
   destructiveText: {
-    color: '#FF4B4B',
+    color: '#EF4444',
   },
 });

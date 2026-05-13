@@ -2,9 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, ScrollView } from 'react-native';
 import { HomeHeader } from '@/components/home/HomeHeader';
 import { ProfileHeader } from '@/components/profile/ProfileHeader';
-import { ProfileStats } from '@/components/profile/ProfileStats';
 import { ProfileMenu } from '@/components/profile/ProfileMenu';
 import { ProfileEditModal } from '@/components/profile/ProfileEditModal';
+import { ProfileDetails } from '@/components/profile/ProfileDetails';
 import { useAuth } from '@/context/AuthContext';
 import { getMe } from '@/services/customerService';
 import { Customer } from '@/types/customer.types';
@@ -68,10 +68,10 @@ export default function ProfileScreen() {
   return (
     <View style={styles.container}>
       <HomeHeader />
-      
+
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        <ProfileHeader customer={customer} onEdit={handleEdit} />
-        <ProfileStats />
+        <ProfileHeader customer={customer} />
+        <ProfileDetails customer={customer} onEdit={handleEdit} />
         <ProfileMenu />
       </ScrollView>
 

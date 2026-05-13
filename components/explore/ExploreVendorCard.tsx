@@ -5,6 +5,8 @@ import React, { useEffect, useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View, ActivityIndicator } from 'react-native';
 import { VendorResult } from '@/services/vendorSearchService';
 import { getBusinessPricing, getLowestPrice } from '@/services/pricingService';
+import { useAuth } from '@/context/AuthContext';
+import { saveVendor, unsaveVendor, isVendorSaved } from '@/services/savedVendorService';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://49.248.202.218:5000/';
 
@@ -47,10 +49,24 @@ export const ExploreVendorCard: React.FC<ExploreVendorCardProps> = ({
   onPress
 }) => {
   const [liked, setLiked] = useState(false);
+  const { user } = useAuth();
   const [imageError, setImageError] = useState(false);
   const [internalPrice, setInternalPrice] = useState<number | null>(basePrice ?? null);
   const [loadingPrice, setLoadingPrice] = useState(false);
   const router = useRouter();
+
+  useEffect(() => {
+    if (user?.id) {
+      checkIfSaved();
+    }
+  }, [user?.id, vendor.business_id]);
+
+  const checkIfSaved = async () => {
+    if (user?.id) {
+      const saved = await isVendorSaved(user.id, vendor.business_id);
+      setLiked(saved);
+    }
+  };
 
   useEffect(() => {
     if (basePrice !== undefined) {
@@ -81,6 +97,18 @@ export const ExploreVendorCard: React.FC<ExploreVendorCardProps> = ({
       router.push(`/vendor/${vendor.business_id}`);
     }
   };
+
+  const handleLikePress = async () => {
+    if (!user?.id) return;
+
+    if (liked) {
+      await unsaveVendor(user.id, vendor.business_id);
+      setLiked(false);
+    } else {
+      await saveVendor(user.id, vendor);
+      setLiked(true);
+    }
+  };
   
   const coverImage = getMediaUrl(vendor.cover_photo_url);
   const hasImage = !!coverImage && !imageError;
@@ -106,7 +134,7 @@ export const ExploreVendorCard: React.FC<ExploreVendorCardProps> = ({
             <Text style={styles.initials}>{initials}</Text>
           </View>
         )}
-        <TouchableOpacity style={styles.heartButton} onPress={() => setLiked(!liked)}>
+        <TouchableOpacity style={styles.heartButton} onPress={handleLikePress}>
           <Ionicons name={liked ? "heart" : "heart-outline"} size={18} color={liked ? "#FF4D4D" : "#333"} />
         </TouchableOpacity>
         <View style={styles.ratingBadge}>

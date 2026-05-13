@@ -5,12 +5,15 @@ export const ExploreHero = () => {
   return (
     <View style={styles.container}>
       <ImageBackground
-        source={{ uri: 'https://images.unsplash.com/photo-1519225421980-715cb0202128?auto=format&fit=crop&q=80&w=1000' }}
+        source={{ uri: 'https://images.unsplash.com/photo-1511795409834-ef04bbd61622?auto=format&fit=crop&q=80&w=1000' }}
         style={styles.background}
         imageStyle={styles.imageStyle}
+        blurRadius={3}
       >
         <View style={styles.overlay}>
-          <Text style={styles.title}>Find the perfect vendor for your big day</Text>
+          <Text style={styles.title}>
+            Find the right vendor <Text style={styles.highlight}>in minutes.</Text>
+          </Text>
         </View>
       </ImageBackground>
     </View>
@@ -40,9 +43,13 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
   },
   title: {
-    fontSize: 24,
+    fontSize: 26,
     fontWeight: '800',
     color: '#fff',
-    lineHeight: 30,
+    lineHeight: 32,
+  },
+  highlight: {
+    color: '#F5A623',
+    fontStyle: 'italic',
   },
 });

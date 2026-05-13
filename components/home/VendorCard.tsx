@@ -1,8 +1,10 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Dimensions, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useAuth } from '@/context/AuthContext';
+import { saveVendor, unsaveVendor, isVendorSaved } from '@/services/savedVendorService';
 
 const { width } = Dimensions.get('window');
 const CARD_WIDTH = (width - 80) / 3;
@@ -24,19 +26,59 @@ interface VendorCardProps {
   isVerified?: boolean;
   vendorId?: string;
   onPress?: () => void;
+  // Added full vendor object for saving
+  fullVendor?: any; 
 }
 
-export const VendorCard: React.FC<VendorCardProps> = ({ image, title, location, tag, price, rating, isVerified, vendorId, onPress }) => {
+export const VendorCard: React.FC<VendorCardProps> = ({ 
+  image, title, location, tag, price, rating, isVerified, vendorId, onPress, fullVendor 
+}) => {
   const [liked, setLiked] = useState(false);
+  const { user } = useAuth();
   const imageUrl = getMediaUrl(image);
   const [imageError, setImageError] = useState(false);
   const router = useRouter();
+
+  useEffect(() => {
+    if (user?.id && vendorId) {
+      checkIfSaved();
+    }
+  }, [user?.id, vendorId]);
+
+  const checkIfSaved = async () => {
+    if (user?.id && vendorId) {
+      const saved = await isVendorSaved(user.id, vendorId);
+      setLiked(saved);
+    }
+  };
 
   const handlePress = () => {
     if (onPress) {
       onPress();
     } else if (vendorId) {
       router.push({ pathname: '/vendor/[id]' as any, params: { id: vendorId } });
+    }
+  };
+
+  const handleLikePress = async () => {
+    if (!user?.id || !vendorId) return;
+
+    if (liked) {
+      await unsaveVendor(user.id, vendorId);
+      setLiked(false);
+    } else {
+      // Reconstruct vendor object if fullVendor is not provided
+      const vendorToSave = fullVendor || {
+        business_id: vendorId,
+        business_name: title,
+        city: location,
+        calculated_rating: rating,
+        cover_photo_url: image,
+        verified: isVerified,
+        business_categories: tag ? [{ name: tag }] : [],
+      };
+      await saveVendor(user.id, vendorToSave);
+      setLiked(true);
     }
   };
 
@@ -69,16 +111,16 @@ export const VendorCard: React.FC<VendorCardProps> = ({ image, title, location, 
             <Text style={styles.verifiedText}>VERIFIED</Text>
           </View>
         )}
-        <TouchableOpacity style={styles.heartButton} onPress={() => setLiked(!liked)}>
+        <TouchableOpacity style={styles.heartButton} onPress={handleLikePress}>
           <Ionicons name={liked ? "heart" : "heart-outline"} size={20} color={liked ? "#FF4D4D" : "#333"} />
         </TouchableOpacity>
       </View>
       
       <View style={styles.content}>
-        <Text style={styles.title}>{title}</Text>
+        <Text style={styles.title} numberOfLines={1}>{title}</Text>
         <View style={styles.locationContainer}>
           <Ionicons name="location-outline" size={14} color="#666" />
-          <Text style={styles.locationText}>{location}</Text>
+          <Text style={styles.locationText} numberOfLines={1}>{location}</Text>
         </View>
         
         <View style={styles.footer}>
