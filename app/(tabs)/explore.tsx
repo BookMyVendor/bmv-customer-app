@@ -50,6 +50,7 @@ export default function ExploreScreen() {
     categoryName?: string | string[];
     categoryType?: string | string[];
     businessModel?: string | string[];
+    bareExplore?: string | string[];
   }>();
   const searchQuery = firstRouteParam(params.query);
   const searchCity = firstRouteParam(params.city);
@@ -57,6 +58,7 @@ export default function ExploreScreen() {
   const categoryName = firstRouteParam(params.categoryName);
   const categoryType = firstRouteParam(params.categoryType);
   const businessModel = firstRouteParam(params.businessModel);
+  const bareExplore = firstRouteParam(params.bareExplore);
 
   const [vendors, setVendors] = useState<VendorResult[]>([]);
   const [loading, setLoading] = useState(false);
@@ -150,9 +152,18 @@ export default function ExploreScreen() {
   };
 
   useEffect(() => {
+    if (bareExplore === '1') {
+      setPriceFilter(null);
+      setRatingFilter(null);
+      setLocalSearchQuery('');
+      setSortBy('rating');
+      setPage(1);
+      router.replace({ pathname: '/explore' });
+      return;
+    }
     setPage(1);
     fetchVendors(1, false);
-  }, [searchQuery, searchCity, fromDashboard, locationCity, priceFilter, ratingFilter, sortBy]);
+  }, [searchQuery, searchCity, fromDashboard, locationCity, priceFilter, ratingFilter, sortBy, bareExplore]);
 
   const handleLoadMore = () => {
     if (!loading && !loadingMore && hasMore) {

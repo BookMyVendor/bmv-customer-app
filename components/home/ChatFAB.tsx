@@ -1,15 +1,24 @@
+import { AIConciergeModal } from '@/components/concierge/AIConciergeModal';
 import { Ionicons } from '@expo/vector-icons';
-import React from 'react';
+import React, { useState } from 'react';
 import { StyleSheet, TouchableOpacity } from 'react-native';
 
 export const ChatFAB = () => {
+  const [conciergeOpen, setConciergeOpen] = useState(false);
+
   return (
-    <TouchableOpacity style={styles.container}>
-      <Ionicons name="chatbubble-ellipses" size={24} color="#fff" />
-    </TouchableOpacity>
+    <>
+      <TouchableOpacity
+        style={styles.container}
+        onPress={() => setConciergeOpen(true)}
+        accessibilityRole="button"
+        accessibilityLabel="Open AI concierge chat">
+        <Ionicons name="chatbubble-ellipses" size={24} color="#fff" />
+      </TouchableOpacity>
+      <AIConciergeModal visible={conciergeOpen} onClose={() => setConciergeOpen(false)} />
+    </>
   );
 };
-
 
 const styles = StyleSheet.create({
   container: {
