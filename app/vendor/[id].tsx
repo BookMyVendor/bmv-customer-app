@@ -60,6 +60,27 @@ function isVideoUrl(url: string): boolean {
   return /\.(mp4|webm|mov|m3u8|mkv|avi)(\?|$)/i.test(p);
 }
 
+/** DB sometimes stores description as stringified `{ originalDescription, portfolioImages }`. */
+function getVendorAboutText(raw: string | null | undefined): string {
+  if (raw == null || !String(raw).trim()) return '';
+  const s = String(raw).trim();
+  if (!s.startsWith('{')) return s;
+  try {
+    const parsed = JSON.parse(s) as Record<string, unknown>;
+    if (
+      parsed &&
+      typeof parsed === 'object' &&
+      ('originalDescription' in parsed || 'portfolioImages' in parsed)
+    ) {
+      const od = parsed.originalDescription;
+      return typeof od === 'string' ? od.trim() : '';
+    }
+  } catch {
+    /* plain text that happened to start with "{" */
+  }
+  return s;
+}
+
 type HeroSlide = { kind: 'cover' | 'image' | 'video'; url: string | null };
 
 function buildHeroSlides(v: VendorResult): HeroSlide[] {
@@ -389,7 +410,9 @@ export default function VendorDetailScreen() {
 
           <View style={styles.aboutBlock}>
             <Text style={styles.sectionEyebrow}>About</Text>
-            <Text style={styles.aboutBody}>{vendor.description || 'No description has been added for this vendor yet.'}</Text>
+            <Text style={styles.aboutBody}>
+              {getVendorAboutText(vendor.description) || 'No description has been added for this vendor yet.'}
+            </Text>
           </View>
         </View>
 
