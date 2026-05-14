@@ -3,7 +3,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Stack, router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import React, { useState, useEffect } from 'react';
-import { KeyboardAvoidingView, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, Alert, ActivityIndicator, RefreshControl } from 'react-native';
+import { KeyboardAvoidingView, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, Alert, ActivityIndicator, RefreshControl, useWindowDimensions } from 'react-native';
 import { GestureHandlerRootView, Swipeable } from 'react-native-gesture-handler';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Contacts from 'expo-contacts';
@@ -14,26 +14,40 @@ import { Guest } from '@/types/guest.types';
 const EVENT_NAME = 'My Event';
 
 const CATEGORIES = ['Family', 'Friends', 'Colleague', 'Others'];
-const RSVP_OPTIONS = ['Pending', 'Yes', 'No'];
+const RSVP_OPTIONS = ['Pending', 'Attending', 'Not Attending'];
+
+/** API expects: pending | attending | not-attending */
+function rsvpStatusForApi(uiLabel: string): string {
+  const t = uiLabel.trim().toLowerCase();
+  if (t === 'attending') return 'attending';
+  if (t === 'not attending') return 'not-attending';
+  return 'pending';
+}
+
+function rsvpStatusFromApi(api: string | null | undefined): string {
+  const t = (api || '').toLowerCase().trim().replace(/_/g, '-');
+  if (t === 'attending' || t === 'yes') return 'Attending';
+  if (t === 'not-attending' || t === 'notattending' || t === 'no' || t === 'declined') return 'Not Attending';
+  return 'Pending';
+}
 
 
 const statusColor = (status: string | null) => {
-  switch (status?.toUpperCase()) {
-    case 'YES':
-    case 'ATTENDING':
-      return { color: '#047857', label: 'Attending', bg: '#D1FAE5' };
-    case 'PENDING':
-      return { color: '#B45309', label: 'Pending', bg: '#FEF3C7' };
-    case 'NO':
-    case 'DECLINED':
-      return { color: '#B91C1C', label: 'Declined', bg: '#FEE2E2' };
-    default:
-      return { color: '#475569', label: status || 'Pending', bg: '#F1F5F9' };
+  const n = (status || '').toLowerCase().trim().replace(/_/g, '-');
+  if (n === 'attending' || n === 'yes') {
+    return { color: '#047857', label: 'Attending', bg: '#D1FAE5' };
   }
+  if (n === 'pending' || n === '') {
+    return { color: '#B45309', label: 'Pending', bg: '#FEF3C7' };
+  }
+  if (n === 'not-attending' || n === 'notattending' || n === 'no' || n === 'declined') {
+    return { color: '#B91C1C', label: 'Not Attending', bg: '#FEE2E2' };
+  }
+  return { color: '#475569', label: status || 'Pending', bg: '#F1F5F9' };
 };
 
-const StatCard = ({ label, value, subValue, progress, color }: any) => (
-  <View style={styles.statCardOuter}>
+const StatCard = ({ label, value, subValue, progress, color, outerStyle }: any) => (
+  <View style={[styles.statCardOuter, outerStyle]}>
     <View style={[styles.statCardAccent, { backgroundColor: color }]} />
     <View style={styles.statCard}>
       <Text style={styles.statLabel}>{label}</Text>
@@ -100,6 +114,8 @@ const GuestCardItem = ({ guest, onDelete, onEdit }: any) => {
 
 export default function GuestListManagerScreen() {
   const insets = useSafeAreaInsets();
+  const { width: windowWidth } = useWindowDimensions();
+  const statTileWidth = (windowWidth - 32 - 10) / 2;
   const { accessToken } = useAuth();
   const currentEventName = EVENT_NAME;
   const [guests, setGuests] = useState<Guest[]>([]);
@@ -180,7 +196,7 @@ export default function GuestListManagerScreen() {
           phone: phone.trim() || undefined,
           email: email.trim() || undefined,
           category,
-          rsvp_status: rsvpStatus,
+          rsvp_status: rsvpStatusForApi(rsvpStatus),
           dietary_restrictions: dietary.trim() || undefined
         }, accessToken || '');
       } else {
@@ -191,7 +207,7 @@ export default function GuestListManagerScreen() {
           phone: phone.trim() || undefined,
           email: email.trim() || undefined,
           category,
-          rsvp_status: rsvpStatus,
+          rsvp_status: rsvpStatusForApi(rsvpStatus),
           dietary_restrictions: dietary.trim() || undefined
         }, accessToken || '');
       }
@@ -229,7 +245,7 @@ export default function GuestListManagerScreen() {
     setPhone(guest.phone || '');
     setEmail(guest.email || '');
     setCategory(guest.category || 'Friends');
-    setRsvpStatus(guest.rsvp_status || 'Pending');
+    setRsvpStatus(rsvpStatusFromApi(guest.rsvp_status));
     setDietary(guest.dietary_restrictions || '');
     setModalVisible(true);
   };
@@ -304,19 +320,30 @@ export default function GuestListManagerScreen() {
     const searchMatch = !q || (g.name && g.name.toLowerCase().includes(q));
     const catMatch =
       selectedCategory === 'All' || g.category?.toLowerCase() === selectedCategory.toLowerCase();
+    const r = (g.rsvp_status || '').toLowerCase().trim().replace(/_/g, '-');
     const rsvpMatch =
-      selectedRSVP === 'All' || g.rsvp_status?.toLowerCase() === selectedRSVP.toLowerCase();
+      selectedRSVP === 'All' ||
+      (selectedRSVP === 'Attending' && (r === 'attending' || r === 'yes')) ||
+      (selectedRSVP === 'Not Attending' &&
+        (r === 'not-attending' || r === 'notattending' || r === 'no' || r === 'declined')) ||
+      (selectedRSVP === 'Pending' && (!g.rsvp_status || r === '' || r === 'pending'));
     return searchMatch && catMatch && rsvpMatch;
   });
 
   const stats = {
     total: guests.length,
-    attending: guests.filter(g =>
-      ['yes', 'attending'].includes(g.rsvp_status?.toLowerCase() || '')
-    ).length,
-    pending: guests.filter(g =>
-      !g.rsvp_status || ['pending'].includes(g.rsvp_status.toLowerCase())
-    ).length,
+    attending: guests.filter(g => {
+      const r = g.rsvp_status?.toLowerCase().trim().replace(/_/g, '-') || '';
+      return r === 'attending' || r === 'yes';
+    }).length,
+    pending: guests.filter(g => {
+      const r = g.rsvp_status?.toLowerCase().trim().replace(/_/g, '-') || '';
+      return !g.rsvp_status || r === '' || r === 'pending';
+    }).length,
+    notAttending: guests.filter(g => {
+      const r = g.rsvp_status?.toLowerCase().trim().replace(/_/g, '-') || '';
+      return r === 'not-attending' || r === 'notattending' || r === 'no' || r === 'declined';
+    }).length,
   };
 
   const selectContact = (contact: any) => {
@@ -377,9 +404,34 @@ export default function GuestListManagerScreen() {
           }
         >
           <View style={styles.statsRow}>
-            <StatCard label="Guests" value={stats.total} progress={100} color="#6366F1" />
-            <StatCard label="Yes" value={stats.attending} progress={stats.total > 0 ? (stats.attending / stats.total) * 100 : 0} color="#10B981" />
-            <StatCard label="Pending" value={stats.pending} progress={stats.total > 0 ? (stats.pending / stats.total) * 100 : 0} color="#F59E0B" />
+            <StatCard
+              label="Guests"
+              value={stats.total}
+              progress={100}
+              color="#6366F1"
+              outerStyle={{ width: statTileWidth }}
+            />
+            <StatCard
+              label="Attending"
+              value={stats.attending}
+              progress={stats.total > 0 ? (stats.attending / stats.total) * 100 : 0}
+              color="#10B981"
+              outerStyle={{ width: statTileWidth }}
+            />
+            <StatCard
+              label="Pending"
+              value={stats.pending}
+              progress={stats.total > 0 ? (stats.pending / stats.total) * 100 : 0}
+              color="#F59E0B"
+              outerStyle={{ width: statTileWidth }}
+            />
+            <StatCard
+              label="Not attending"
+              value={stats.notAttending}
+              progress={stats.total > 0 ? (stats.notAttending / stats.total) * 100 : 0}
+              color="#EF4444"
+              outerStyle={{ width: statTileWidth }}
+            />
           </View>
 
           <View style={styles.searchSection}>
@@ -766,9 +818,14 @@ const styles = StyleSheet.create({
 
   scrollContent: { paddingTop: 16 },
 
-  statsRow: { flexDirection: 'row', paddingHorizontal: 16, gap: 10, marginBottom: 18 },
+  statsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    paddingHorizontal: 16,
+    gap: 10,
+    marginBottom: 18,
+  },
   statCardOuter: {
-    flex: 1,
     flexDirection: 'row',
     borderRadius: 18,
     overflow: 'hidden',
@@ -1090,7 +1147,7 @@ const styles = StyleSheet.create({
   },
   segment: { flex: 1, paddingVertical: 12, alignItems: 'center' },
   segmentActive: { backgroundColor: '#6366F1' },
-  segmentText: { fontSize: 14, fontWeight: '700', color: '#666' },
+  segmentText: { fontSize: 12, fontWeight: '700', color: '#666', textAlign: 'center' },
   segmentTextActive: { color: '#fff' },
 
   // Counter

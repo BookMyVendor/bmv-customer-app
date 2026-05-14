@@ -12,6 +12,20 @@ import {
 } from '@/types/guest.types';
 import { apiPost } from './apiClient';
 
+function getApiErrorMessage(error: unknown, fallback: string): string {
+  const e = error as {
+    response?: { data?: { error?: string; message?: string } };
+    error?: string;
+    message?: string;
+  };
+  const msg =
+    e?.response?.data?.error ??
+    e?.response?.data?.message ??
+    e?.error ??
+    e?.message;
+  return typeof msg === 'string' && msg.trim() ? msg.trim() : fallback;
+}
+
 export async function deleteGuest(
   request: GuestDeleteRequest,
   accessToken: string
@@ -27,8 +41,7 @@ export async function deleteGuest(
     );
     return { success: true };
   } catch (error) {
-    const apiError = error as any;
-    throw new Error(apiError.error || 'Failed to delete guest');
+    throw new Error(getApiErrorMessage(error, 'Failed to delete guest'));
   }
 }
 
@@ -47,8 +60,7 @@ export async function getOrCreateGuestList(
     );
     return response;
   } catch (error) {
-    const apiError = error as any;
-    throw new Error(apiError.error || 'Failed to get or create guest list');
+    throw new Error(getApiErrorMessage(error, 'Failed to get or create guest list'));
   }
 }
 
@@ -67,8 +79,7 @@ export async function addGuest(
     );
     return response;
   } catch (error) {
-    const apiError = error as any;
-    throw new Error(apiError.error || 'Failed to add guest');
+    throw new Error(getApiErrorMessage(error, 'Failed to add guest'));
   }
 }
 
@@ -87,8 +98,7 @@ export async function listGuests(
     );
     return response;
   } catch (error) {
-    const apiError = error as any;
-    throw new Error(apiError.error || 'Failed to list guests');
+    throw new Error(getApiErrorMessage(error, 'Failed to list guests'));
   }
 }
 export async function updateGuest(
@@ -106,7 +116,6 @@ export async function updateGuest(
     );
     return response;
   } catch (error) {
-    const apiError = error as any;
-    throw new Error(apiError.error || 'Failed to update guest');
+    throw new Error(getApiErrorMessage(error, 'Failed to update guest'));
   }
 }

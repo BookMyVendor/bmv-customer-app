@@ -2,11 +2,12 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Pressable, ActivityIndicator, Alert, Modal } from 'react-native';
 import { Stack, router } from 'expo-router';
 import { Ionicons, MaterialCommunityIcons, FontAwesome5 } from '@expo/vector-icons';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { useAuth } from '@/context/AuthContext';
 import { getCategoryTree } from '@/services/categoryService';
+import { CategoryTreeNode } from '@/types/category.types';
 import { createChecklist, listChecklists, updateChecklistItems } from '@/services/checklistService';
 import { Checklist, ChecklistItem, ChecklistItemInput } from '@/types/checklist.types';
 import { CHECKLIST_TEMPLATES } from '@/constants/checklistTemplates';
@@ -27,11 +28,28 @@ const getCategoryColor = (index: number) => {
   return colors[index % colors.length];
 };
 
+/** Only top-level categories with category_type === 'event' (no nested children in the picker). */
+function rootEventCategoriesOnly(roots: CategoryTreeNode[]): CategoryTreeNode[] {
+  return roots.filter((n) => n.category_type === 'event');
+}
+
+function compareCategorySortThenName(a: CategoryTreeNode, b: CategoryTreeNode): number {
+  const sa = a.sort_order;
+  const sb = b.sort_order;
+  const aNull = sa == null;
+  const bNull = sb == null;
+  if (aNull && !bNull) return 1;
+  if (!aNull && bNull) return -1;
+  if (!aNull && !bNull && Number(sa) !== Number(sb)) return Number(sa) - Number(sb);
+  return (a.name || '').localeCompare(b.name || '');
+}
+
 export default function ChecklistGeneratorScreen() {
+  const insets = useSafeAreaInsets();
   const { accessToken } = useAuth();
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
-  const [eventTypes, setEventTypes] = useState<any[]>([]);
+  const [eventTypes, setEventTypes] = useState<CategoryTreeNode[]>([]);
   const [selectedEventType, setSelectedEventType] = useState<string>('');
   const [checklist, setChecklist] = useState<Checklist | null>(null);
   const [localItems, setLocalItems] = useState<ChecklistItemInput[]>([]);
@@ -53,10 +71,12 @@ export default function ChecklistGeneratorScreen() {
     try {
       setLoading(true);
       
-      // 1. Fetch Event Types
+      // 1. Fetch categories (API returns tree roots); list only parent-level event types, not children
       const catRes = await getCategoryTree({ category_type: 'event' });
       if (catRes.success) {
-        setEventTypes(catRes.categories || []);
+        const roots = catRes.categories || [];
+        const events = rootEventCategoriesOnly(roots).sort(compareCategorySortThenName);
+        setEventTypes(events);
       }
 
       // 2. Fetch Existing Checklists
@@ -80,7 +100,7 @@ export default function ChecklistGeneratorScreen() {
     }
   };
 
-  const handleEventTypeSelect = (event: any) => {
+  const handleEventTypeSelect = (event: CategoryTreeNode) => {
     setSelectedEventType(event.name);
     setShowEventPicker(false);
     const template = CHECKLIST_TEMPLATES[event.name];
@@ -313,7 +333,11 @@ export default function ChecklistGeneratorScreen() {
                 <Ionicons name="close" size={24} color="#666" />
               </TouchableOpacity>
             </View>
-            <ScrollView style={styles.modalList}>
+            <ScrollView
+              style={styles.modalList}
+              contentContainerStyle={{ paddingBottom: 20 + insets.bottom }}
+              keyboardShouldPersistTaps="handled"
+            >
               {eventTypes.map((event) => (
                 <TouchableOpacity 
                   key={event.id} 
@@ -340,7 +364,11 @@ export default function ChecklistGeneratorScreen() {
                 <Ionicons name="close" size={24} color="#666" />
               </TouchableOpacity>
             </View>
-            <ScrollView style={styles.modalList}>
+            <ScrollView
+              style={styles.modalList}
+              contentContainerStyle={{ paddingBottom: 20 + insets.bottom }}
+              keyboardShouldPersistTaps="handled"
+            >
               {categories.map((cat) => (
                 <TouchableOpacity 
                   key={cat.id} 
@@ -412,7 +440,11 @@ export default function ChecklistGeneratorScreen() {
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={styles.modalList} contentContainerStyle={{ paddingBottom: 40 }}>
+            <ScrollView
+              style={styles.modalList}
+              contentContainerStyle={{ paddingBottom: 40 + insets.bottom }}
+              keyboardShouldPersistTaps="handled"
+            >
               {localItems.filter(i => i.category === activeCategory?.title).map((item, idx) => (
                 <View key={idx} style={styles.taskItem}>
                   <TouchableOpacity 
@@ -579,9 +611,11 @@ const styles = StyleSheet.create({
     padding: 4,
   },
   headerTitle: {
+    flex: 1,
+    marginLeft: 8,
     fontSize: 18,
-    fontWeight: '700',
-    color: '#001F3F',
+    fontWeight: '800',
+    color: '#1A1A1A',
   },
   headerActions: {
     flexDirection: 'row',
@@ -787,16 +821,6 @@ const styles = StyleSheet.create({
   },
   categoryInfo: {
     flex: 1,
-  },
-  backButton: {
-    padding: 4,
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#1A1A1A',
-    flex: 1,
-    marginLeft: 8,
   },
   initButton: {
     flexDirection: 'row',

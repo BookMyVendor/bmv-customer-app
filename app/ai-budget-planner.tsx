@@ -2,7 +2,7 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Stack, router } from 'expo-router';
 import React, { useState, useEffect, useMemo } from 'react';
 import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, ActivityIndicator, Modal, Alert, KeyboardAvoidingView, Platform } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { Asset } from 'expo-asset';
@@ -91,6 +91,7 @@ const BudgetItem = ({ item, index, isGlobalEditMode, onAmountChange, onNameChang
 };
 
 export default function AIBudgetPlannerScreen() {
+  const insets = useSafeAreaInsets();
   const { accessToken } = useAuth();
   const [budget, setBudget] = useState('500000');
   const [categories, setCategories] = useState<WeddingBudgetPlanCategory[]>([]);
@@ -442,7 +443,11 @@ export default function AIBudgetPlannerScreen() {
         </View>
       </SafeAreaView>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: 140 + insets.bottom }]}
+        keyboardShouldPersistTaps="handled"
+      >
 
         {/* Budget Input */}
         <View style={styles.inputBlock}>
@@ -555,8 +560,8 @@ export default function AIBudgetPlannerScreen() {
 
       </ScrollView>
 
-      {/* Footer */}
-      <View style={styles.footer}>
+      {/* Footer — pad bottom for Android nav bar / gesture inset */}
+      <View style={[styles.footer, { paddingBottom: 16 + insets.bottom }]}>
         <TouchableOpacity 
           style={[styles.primaryBtn, saving && { opacity: 0.7 }]} 
           onPress={handleSavePlan}
@@ -640,7 +645,7 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: 18, fontWeight: '700', color: '#1A1A1A' },
 
 
-  scrollContent: { paddingBottom: 140, paddingTop: 0 },
+  scrollContent: { paddingTop: 0 },
 
   // Budget Input
   inputBlock: { marginHorizontal: 16, marginBottom: 24, marginTop: 0 },
@@ -727,7 +732,7 @@ const styles = StyleSheet.create({
   // Footer
   footer: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
-    backgroundColor: '#fff', paddingHorizontal: 16, paddingTop: 12, paddingBottom: 28,
+    backgroundColor: '#fff', paddingHorizontal: 16, paddingTop: 12,
     borderTopWidth: 1, borderTopColor: '#F0F0F0', flexDirection: 'row', gap: 12,
   },
   primaryBtn: {
