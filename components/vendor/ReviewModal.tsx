@@ -17,7 +17,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { Image } from 'expo-image';
 import { Review, SubmitCustomerReviewRequest } from '@/types/review.types';
 import { VerifyOtpResponse } from '@/types/auth.types';
-import { submitCustomerReview, uploadReviewImages } from '@/services/reviewService';
+import { submitCustomerReview, uploadReviewImages, deleteReview } from '@/services/reviewService';
 
 interface ReviewModalProps {
   visible: boolean;
@@ -87,7 +87,17 @@ export default function ReviewModal({
 
     try {
       setIsSubmitting(true);
-      
+
+      // If editing, remove the old review first so the backend's
+      // submit endpoint (which always inserts) doesn't create a duplicate.
+      if (initialReview?.id) {
+        try {
+          await deleteReview({ review_id: initialReview.id }, accessToken);
+        } catch (e) {
+          console.warn('[REVIEW] Failed to delete old review before update:', e);
+        }
+      }
+
       const requestData: SubmitCustomerReviewRequest = {
         business_id: businessId,
         vendor_id: vendorId,
@@ -95,10 +105,6 @@ export default function ReviewModal({
         review_text: reviewText,
         customer_id: authUser?.id || '',
       };
-
-      if (initialReview?.id) {
-        requestData.review_id = initialReview.id;
-      }
 
       const response = await submitCustomerReview(requestData, accessToken);
 

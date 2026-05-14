@@ -8,6 +8,17 @@ interface ProfileDetailsProps {
   onEdit: () => void;
 }
 
+type Row = {
+  id: string;
+  label: string;
+  value: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  iconBg: string;
+  iconColor: string;
+  verified?: boolean;
+  missing?: boolean;
+};
+
 export const ProfileDetails: React.FC<ProfileDetailsProps> = ({ customer, onEdit }) => {
   const formatDate = (dateString?: string) => {
     if (!dateString) return 'Not available';
@@ -15,136 +26,267 @@ export const ProfileDetails: React.FC<ProfileDetailsProps> = ({ customer, onEdit
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   };
 
-  const details = [
-    { id: 'phone', label: 'Phone Number', value: customer?.phone || 'Not provided', icon: 'call-outline' },
-    { id: 'email', label: 'Email Address', value: customer?.email || 'Not provided', icon: 'mail-outline' },
-    { id: 'city', label: 'City', value: customer?.city || 'Not provided', icon: 'location-outline' },
-    { id: 'state', label: 'State', value: customer?.state || 'Not provided', icon: 'map-outline' },
-    { id: 'address', label: 'Address', value: customer?.address || 'Not provided', icon: 'home-outline' },
-    { id: 'pincode', label: 'Pincode', value: customer?.pincode || 'Not provided', icon: 'pin-outline' },
-    { id: 'member_since', label: 'Member since', value: formatDate(customer?.created_at), icon: 'calendar-outline' },
-    { id: 'source', label: 'Registration source', value: customer?.registration_source || 'Web', icon: 'globe-outline' },
+  const contactRows: Row[] = [
+    {
+      id: 'phone',
+      label: 'Phone',
+      value: customer?.phone || 'Not provided',
+      icon: 'call',
+      iconBg: '#E0F2FE',
+      iconColor: '#0284C7',
+      verified: !!customer?.phone,
+    },
+    {
+      id: 'email',
+      label: 'Email',
+      value: customer?.email || 'Add email',
+      icon: 'mail',
+      iconBg: '#FCE7F3',
+      iconColor: '#DB2777',
+      missing: !customer?.email,
+    },
   ];
 
-  return (
-    <View style={styles.container}>
-      <View style={styles.headerRow}>
-        <Text style={styles.sectionTitle}>Personal Details</Text>
-        <TouchableOpacity style={styles.editButton} onPress={onEdit}>
-          <Text style={styles.editButtonText}>Edit</Text>
-          <Ionicons name="pencil" size={14} color="#1E3A8A" />
-        </TouchableOpacity>
-      </View>
+  const addressRows: Row[] = [
+    {
+      id: 'address',
+      label: 'Street Address',
+      value: customer?.address || 'Add address',
+      icon: 'home',
+      iconBg: '#FEF3C7',
+      iconColor: '#D97706',
+      missing: !customer?.address,
+    },
+    {
+      id: 'city',
+      label: 'City / State',
+      value: [customer?.city, customer?.state].filter(Boolean).join(', ') || 'Not set',
+      icon: 'location',
+      iconBg: '#D1FAE5',
+      iconColor: '#059669',
+      missing: !customer?.city && !customer?.state,
+    },
+    {
+      id: 'pincode',
+      label: 'Pincode',
+      value: customer?.pincode || 'Not provided',
+      icon: 'pin',
+      iconBg: '#EDE9FE',
+      iconColor: '#7C3AED',
+      missing: !customer?.pincode,
+    },
+  ];
 
-      <View style={styles.card}>
-        {details.map((item, index) => (
-          <View key={item.id} style={[styles.detailRow, index !== details.length - 1 && styles.borderBottom]}>
-            <View style={styles.iconContainer}>
-              <Ionicons name={item.icon as any} size={20} color="#6B7280" />
-            </View>
-            <View style={styles.textContainer}>
-              <Text style={styles.label}>{item.label}</Text>
-              <Text style={styles.value} numberOfLines={2}>{item.value}</Text>
-            </View>
-            {item.id === 'phone' && (
-              <View style={styles.verifiedBadge}>
-                <Text style={styles.verifiedText}>Verified</Text>
-                <Ionicons name="checkmark-circle" size={12} color="#10B981" />
-              </View>
-            )}
-          </View>
-        ))}
+  const accountRows: Row[] = [
+    {
+      id: 'member_since',
+      label: 'Member since',
+      value: formatDate(customer?.created_at),
+      icon: 'calendar',
+      iconBg: '#FEE2E2',
+      iconColor: '#DC2626',
+    },
+    {
+      id: 'source',
+      label: 'Signed up via',
+      value: (customer?.registration_source || 'Mobile').replace(/^./, c => c.toUpperCase()),
+      icon: 'phone-portrait',
+      iconBg: '#E0E7FF',
+      iconColor: '#4F46E5',
+    },
+  ];
+
+  const renderRow = (item: Row, isLast: boolean) => (
+    <View key={item.id} style={[styles.row, !isLast && styles.rowDivider]}>
+      <View style={[styles.iconBox, { backgroundColor: item.iconBg }]}>
+        <Ionicons name={item.icon} size={16} color={item.iconColor} />
       </View>
+      <View style={styles.rowText}>
+        <Text style={styles.rowLabel}>{item.label}</Text>
+        <Text
+          style={[styles.rowValue, item.missing && styles.rowValueMissing]}
+          numberOfLines={2}
+        >
+          {item.value}
+        </Text>
+      </View>
+      {item.verified && (
+        <View style={styles.verifiedBadge}>
+          <Ionicons name="shield-checkmark" size={11} color="#059669" />
+          <Text style={styles.verifiedText}>Verified</Text>
+        </View>
+      )}
+      {item.missing && (
+        <TouchableOpacity style={styles.addBtn} onPress={onEdit}>
+          <Ionicons name="add" size={12} color="#4F46E5" />
+          <Text style={styles.addBtnText}>Add</Text>
+        </TouchableOpacity>
+      )}
+    </View>
+  );
+
+  const Section = ({
+    title,
+    sub,
+    rows,
+    showEdit,
+  }: {
+    title: string;
+    sub?: string;
+    rows: Row[];
+    showEdit?: boolean;
+  }) => (
+    <View style={styles.section}>
+      <View style={styles.sectionHeader}>
+        <View>
+          <Text style={styles.sectionTitle}>{title}</Text>
+          {!!sub && <Text style={styles.sectionSub}>{sub}</Text>}
+        </View>
+      </View>
+      <View style={styles.card}>
+        {rows.map((r, i) => renderRow(r, i === rows.length - 1))}
+      </View>
+    </View>
+  );
+
+  return (
+    <View style={styles.wrap}>
+      <Section
+        title="Contact"
+        sub="How we reach you"
+        rows={contactRows}
+        showEdit
+      />
+      <Section
+        title="Address"
+        sub="Where we deliver experiences"
+        rows={addressRows}
+      />
+      <Section
+        title="Account"
+        rows={accountRows}
+      />
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    paddingHorizontal: 16,
-    marginTop: 24,
-    marginBottom: 16,
+  wrap: {
+    paddingHorizontal: 14,
+    marginTop: 22,
   },
-  headerRow: {
+  section: {
+    marginBottom: 18,
+  },
+  sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 10,
+    paddingHorizontal: 4,
   },
   sectionTitle: {
     fontSize: 16,
-    fontWeight: '700',
-    color: '#1F2937',
+    fontWeight: '800',
+    color: '#0F172A',
+    letterSpacing: -0.2,
   },
-  editButton: {
+  sectionSub: {
+    fontSize: 12,
+    color: '#94A3B8',
+    fontWeight: '500',
+    marginTop: 1,
+  },
+  editPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    backgroundColor: '#EEF2FF',
-    paddingHorizontal: 14,
+    gap: 4,
+    paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 16,
+    backgroundColor: '#EEF2FF',
+    borderRadius: 999,
   },
-  editButtonText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#1E3A8A',
+  editPillText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#4F46E5',
   },
   card: {
     backgroundColor: '#fff',
-    borderRadius: 20,
-    padding: 16,
+    borderRadius: 18,
+    paddingHorizontal: 14,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 12,
-    elevation: 3,
+    shadowOpacity: 0.04,
+    shadowRadius: 10,
+    elevation: 2,
+    borderWidth: 1,
+    borderColor: '#F1F2F4',
   },
-  detailRow: {
+  row: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 12,
   },
-  borderBottom: {
+  rowDivider: {
     borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
+    borderBottomColor: '#F1F5F9',
   },
-  iconContainer: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    backgroundColor: '#F3F4F6',
+  iconBox: {
+    width: 38,
+    height: 38,
+    borderRadius: 11,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 16,
+    marginRight: 12,
   },
-  textContainer: {
+  rowText: {
     flex: 1,
   },
-  label: {
+  rowLabel: {
     fontSize: 11,
-    color: '#9CA3AF',
-    marginBottom: 4,
+    color: '#94A3B8',
+    fontWeight: '600',
+    letterSpacing: 0.4,
     textTransform: 'uppercase',
-    letterSpacing: 0.6,
+    marginBottom: 2,
   },
-  value: {
-    fontSize: 15,
-    color: '#111827',
+  rowValue: {
+    fontSize: 14,
+    color: '#0F172A',
+    fontWeight: '600',
+  },
+  rowValueMissing: {
+    color: '#94A3B8',
+    fontStyle: 'italic',
     fontWeight: '500',
   },
   verifiedBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 3,
     backgroundColor: '#D1FAE5',
     paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 12,
+    borderRadius: 999,
   },
   verifiedText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#10B981',
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#059669',
+  },
+  addBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    backgroundColor: '#EEF2FF',
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
+  addBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#4F46E5',
   },
 });

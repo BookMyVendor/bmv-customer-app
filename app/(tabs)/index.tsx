@@ -134,7 +134,14 @@ export default function HomeScreen() {
 
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Verified Vendors</Text>
-          <TouchableOpacity onPress={() => router.push({ pathname: '/(tabs)/explore', params: { fromDashboard: 'true', city: effectiveCity || '' } })}>
+          <TouchableOpacity
+            onPress={() =>
+              router.navigate({
+                pathname: '/explore',
+                params: { fromDashboard: 'true', city: effectiveCity || '' },
+              })
+            }
+          >
             <Text style={styles.exploreText}>EXPLORE</Text>
           </TouchableOpacity>
         </View>

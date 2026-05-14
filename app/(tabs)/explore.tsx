@@ -10,7 +10,7 @@ import { searchVendors, VendorResult } from '@/services/vendorSearchService';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import React, { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, FlatList, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, FlatList, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SortFilterModal, SortOption } from '@/components/explore/SortFilterModal';
 
 const PRICE_LABELS: Record<PriceOption['value'], string> = {
@@ -34,18 +34,29 @@ const SORT_LABELS: Record<SortOption, string> = {
   price: 'Budget-friendly',
 };
 
+/** Expo Router can pass `string | string[]` for params — normalize to a single string. */
+function firstRouteParam(v: string | string[] | undefined): string | undefined {
+  if (v === undefined) return undefined;
+  return Array.isArray(v) ? v[0] : v;
+}
+
 export default function ExploreScreen() {
   const { city: locationCity } = useLocation();
   const router = useRouter();
-  const params = useLocalSearchParams<{ 
-    query?: string; 
-    city?: string; 
-    fromDashboard?: string;
-    categoryName?: string;
-    categoryType?: string;
-    businessModel?: string;
+  const params = useLocalSearchParams<{
+    query?: string | string[];
+    city?: string | string[];
+    fromDashboard?: string | string[];
+    categoryName?: string | string[];
+    categoryType?: string | string[];
+    businessModel?: string | string[];
   }>();
-  const { query: searchQuery, city: searchCity, fromDashboard, categoryName, categoryType, businessModel } = params;
+  const searchQuery = firstRouteParam(params.query);
+  const searchCity = firstRouteParam(params.city);
+  const fromDashboard = firstRouteParam(params.fromDashboard);
+  const categoryName = firstRouteParam(params.categoryName);
+  const categoryType = firstRouteParam(params.categoryType);
+  const businessModel = firstRouteParam(params.businessModel);
 
   const [vendors, setVendors] = useState<VendorResult[]>([]);
   const [loading, setLoading] = useState(false);
@@ -160,13 +171,13 @@ export default function ExploreScreen() {
     const newParams: Record<string, string> = {};
     if (trimmed) newParams.query = trimmed;
     if (effectiveCity) newParams.city = effectiveCity;
-    router.replace({ pathname: '/(tabs)/explore', params: newParams });
+    router.replace({ pathname: '/explore', params: newParams });
   };
 
   const clearCityFilter = () => {
     const newParams: Record<string, string> = {};
     if (searchQuery) newParams.query = searchQuery;
-    router.replace({ pathname: '/(tabs)/explore', params: newParams });
+    router.replace({ pathname: '/explore', params: newParams });
   };
 
   const clearSearchFilter = () => {
@@ -178,25 +189,26 @@ export default function ExploreScreen() {
     } else if (searchCity) {
       newParams.city = searchCity;
     }
-    router.replace({ pathname: '/(tabs)/explore', params: newParams });
+    router.replace({ pathname: '/explore', params: newParams });
   };
   
   const clearCategoryFilter = () => {
-    const newParams = { ...params };
-    delete newParams.categoryName;
-    delete newParams.categoryType;
-    delete newParams.businessModel;
-    if (searchQuery === categoryName) {
-      delete newParams.query;
+    const newParams: Record<string, string> = {};
+    if (searchQuery && searchQuery !== categoryName) {
+      newParams.query = searchQuery;
     }
-    router.replace({ pathname: '/(tabs)/explore', params: newParams });
+    if (searchCity) newParams.city = searchCity;
+    if (fromDashboard === 'true') {
+      newParams.fromDashboard = 'true';
+    }
+    router.replace({ pathname: '/explore', params: newParams });
   };
 
   const clearAllFilters = () => {
     setPriceFilter(null);
     setRatingFilter(null);
     setLocalSearchQuery('');
-    router.replace({ pathname: '/(tabs)/explore' });
+    router.replace({ pathname: '/explore' });
   };
 
   const activeFilterChips = useMemo(() => {
@@ -326,7 +338,7 @@ export default function ExploreScreen() {
       <RatingFilterModal
         visible={showRatingModal}
         onClose={() => setShowRatingModal(false)}
-        selectedOption={ratingFilter || 'any'}
+        selected={ratingFilter || 'any'}
         onSelect={(val) => setRatingFilter(val === 'any' ? null : val)}
       />
 

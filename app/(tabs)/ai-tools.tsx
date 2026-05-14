@@ -1,10 +1,7 @@
-import {
-  AIBudgetPlannerCard,
-  AIVendorMatchCard,
-  QuickToolCard
-} from '@/components/ai/SpecializedAITools';
+import { AIToolCard } from '@/components/ai/SpecializedAITools';
 import { ExploreHeader } from '@/components/explore/ExploreHeader';
 import { ChatFAB } from '@/components/home/ChatFAB';
+import { Ionicons } from '@expo/vector-icons';
 import React, { useState, useEffect, useCallback } from 'react';
 import { ScrollView, StyleSheet, Text, View, RefreshControl, ActivityIndicator } from 'react-native';
 import { useAuth } from '@/context/AuthContext';
@@ -37,7 +34,6 @@ export default function AIToolsScreen() {
 
       const newStats = { ...stats };
 
-      // 1. Fetch Guests
       try {
         const glRes = await getOrCreateGuestList({ event_name: 'My Event' }, accessToken);
         if (glRes.success) {
@@ -48,17 +44,14 @@ export default function AIToolsScreen() {
         }
       } catch (e) { console.error('Guest stats error:', e); }
 
-      // 2. Fetch Tasks (Checklist)
       try {
         const cRes = await listChecklists(accessToken);
         if (cRes.success && cRes.checklists.length > 0) {
-          // Count incomplete tasks
           const items = cRes.checklists[0].items || [];
           newStats.tasks = items.filter(i => !i.is_completed).length;
         }
       } catch (e) { console.error('Checklist stats error:', e); }
 
-      // 3. Fetch Budget
       try {
         const bRes = await listWeddingBudgetPlans(accessToken);
         if (bRes.success && bRes.plans.length > 0) {
@@ -66,7 +59,6 @@ export default function AIToolsScreen() {
           const total = plan.total_budget || 0;
           newStats.budget = total;
 
-          // Fetch categories to calculate ACTUAL allocated amount (more reliable than plan.remaining)
           const catRes = await getWeddingBudgetPlanCategories({ plan_id: plan.id }, accessToken);
           if (catRes.success) {
             const allocated = catRes.categories.reduce((sum, cat) => sum + (parseFloat(cat.amount?.toString() || '0')), 0);
@@ -77,22 +69,18 @@ export default function AIToolsScreen() {
               newStats.budgetPercent = 0;
               newStats.budgetLabel = 'Set your budget';
             }
-            console.log(`[AI TOOLS] Budget progress: ${allocated}/${total} (${newStats.budgetPercent}%)`);
           }
         }
       } catch (e) { console.error('Budget stats error:', e); }
 
-      // 4. Fetch Vendors (in current city)
       try {
-        console.log('[AI TOOLS] Fetching vendors for city:', city);
-        // Try searching with popular categories to ensure same-service results
         const popularCategories = ['Caterers', 'Decorators', 'Photographers', 'Venues'];
         let foundSameService = false;
 
         for (const cat of popularCategories) {
           const vRes = await searchVendors({
             mode: 'filter',
-            filters: { 
+            filters: {
               city: city ? [city] : undefined,
               serviceType: [cat]
             },
@@ -102,13 +90,11 @@ export default function AIToolsScreen() {
           if (vRes && vRes.results && vRes.results.length >= 2) {
             newStats.vendors = vRes.count;
             newStats.topVendors = vRes.results.slice(0, 2);
-            console.log(`[AI TOOLS] Found 2+ vendors for category: ${cat}`);
             foundSameService = true;
             break;
           }
         }
 
-        // If no same-service found in city, try global search for same-service
         if (!foundSameService) {
           for (const cat of popularCategories) {
             const vRes = await searchVendors({
@@ -119,14 +105,12 @@ export default function AIToolsScreen() {
             if (vRes && vRes.results && vRes.results.length >= 2) {
               newStats.topVendors = vRes.results.slice(0, 2);
               newStats.vendors = vRes.count;
-              console.log(`[AI TOOLS] Global fallback: Found 2+ vendors for category: ${cat}`);
               foundSameService = true;
               break;
             }
           }
         }
 
-        // Final fallback: just get top 2 of whatever matches
         if (!foundSameService) {
           const vRes = await searchVendors({ mode: 'filter', filters: {}, limit: 10 });
           if (vRes && vRes.results) {
@@ -160,12 +144,13 @@ export default function AIToolsScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={() => loadData(true)} />
         }
       >
-        {/* Hero Section */}
-        <View style={styles.hero}>
-          <Text style={styles.heroTitle}>Plan with AI</Text>
-          <Text style={styles.heroSubtitle}>
-            Your personalized event intelligence.
-          </Text>
+        {/* Header */}
+        <View style={styles.header}>
+          <View style={styles.headerTitleRow}>
+            <Text style={styles.headerTitle}>AI TOOLS</Text>
+            <Ionicons name="sparkles" size={18} color="#6366F1" style={{ marginLeft: 6 }} />
+          </View>
+          <Text style={styles.headerSubtitle}>Smart tools to simplify your event planning</Text>
         </View>
 
         {loading && !refreshing ? (
@@ -174,38 +159,47 @@ export default function AIToolsScreen() {
             <Text style={{ marginTop: 12, color: '#666' }}>Fetching latest updates...</Text>
           </View>
         ) : (
-          <>
-            {/* Quick Tools Section */}
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>QUICK TOOLS</Text>
-              <View style={styles.quickToolsRow}>
-                <QuickToolCard
-                  icon="people-outline"
-                  value={stats.guests.toString()}
-                  label="Guest RSVP'd"
-                  actionText="Manage"
-                  href="/guest-list-manager"
-                />
-                <QuickToolCard
-                  icon="checkmark-circle-outline"
-                  value={stats.tasks.toString()}
-                  label="Tasks Pending"
-                  actionText="View List"
-                  href="/checklist-generator"
-                />
-              </View>
-            </View>
+          <View style={styles.cardsWrap}>
+            <AIToolCard
+              variant="vendor"
+              badge="95% Match"
+              title="AI Vendor Match"
+              description={`Get ${stats.vendors > 0 ? Math.min(stats.vendors, 4) : 4} top vendor picks\nperfectly matched to your style.`}
+              buttonText="Start Side-by-Side Analysis"
+              image="https://images.unsplash.com/photo-1769638913840-2ca96d90e8a9?auto=format&fit=crop&q=80&w=600"
+              href="/ai-vendor-match"
+            />
 
-            {/* Main AI Tools */}
-            <View style={styles.mainTools}>
-              <AIVendorMatchCard vendorCount={stats.vendors} topVendors={stats.topVendors} />
-              <AIBudgetPlannerCard
-                totalBudget={stats.budget}
-                allocation={stats.budgetPercent}
-                label={stats.budgetLabel}
-              />
-            </View>
-          </>
+            <AIToolCard
+              variant="guests"
+              icon="people"
+              title="Guest List Manager"
+              description={`Manage RSVPs, track guests\nand stay organized effortlessly.`}
+              buttonText="Manage Guest List"
+              image="https://images.unsplash.com/photo-1691480174869-436af8fd6eba?auto=format&fit=crop&q=80&w=600"
+              href="/guest-list-manager"
+            />
+
+            <AIToolCard
+              variant="checklist"
+              icon="clipboard"
+              title="Checklist Generator"
+              description={`Get a personalized checklist\nso nothing is missed.`}
+              buttonText="Generate Checklist"
+              image="https://images.unsplash.com/photo-1768055104910-8c8d213835fb?auto=format&fit=crop&q=80&w=600"
+              href="/checklist-generator"
+            />
+
+            <AIToolCard
+              variant="budget"
+              icon="wallet"
+              title="Budget Planner"
+              description={`Plan smart, track expenses\nand stay within budget.`}
+              buttonText="Open Budget Planner"
+              image="https://images.unsplash.com/photo-1762319021727-c73a939c4f3b?auto=format&fit=crop&q=80&w=600"
+              href="/ai-budget-planner"
+            />
+          </View>
         )}
       </ScrollView>
 
@@ -217,63 +211,34 @@ export default function AIToolsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F9FAFC',
+    backgroundColor: '#F5F6F8',
   },
   scrollContent: {
     paddingBottom: 100,
   },
-  conciergeRow: {
+  header: {
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 18,
+  },
+  headerTitleRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    gap: 10,
   },
-  conciergeIconCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#003366',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  conciergeTitle: {
+  headerTitle: {
     fontSize: 18,
-    fontWeight: '700',
-    color: '#003366',
+    fontWeight: '900',
+    color: '#0F172A',
+    letterSpacing: 0.5,
   },
-  hero: {
-    paddingHorizontal: 20,
-    paddingTop: 24,
-    paddingBottom: 32,
-  },
-  heroTitle: {
-    fontSize: 32,
-    fontWeight: '800',
-    color: '#1A1A1A',
-    marginBottom: 8,
-  },
-  heroSubtitle: {
-    fontSize: 16,
-    color: '#999',
+  headerSubtitle: {
+    marginTop: 6,
+    fontSize: 14,
+    color: '#64748B',
     fontWeight: '500',
   },
-  section: {
-    paddingHorizontal: 20,
-    marginBottom: 32,
-  },
-  sectionTitle: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: '#999',
-    letterSpacing: 1.2,
-    marginBottom: 16,
-  },
-  quickToolsRow: {
-    flexDirection: 'row',
+  cardsWrap: {
+    paddingHorizontal: 16,
     gap: 16,
-  },
-  mainTools: {
-    paddingHorizontal: 20,
   },
 });

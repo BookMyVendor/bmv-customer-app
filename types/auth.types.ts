@@ -87,7 +87,7 @@ export interface AuthContextType extends AuthState {
   sendOtp: (phone: string, deviceInfo?: DeviceInfo) => Promise<SendOtpResponse>;
   verifyOtp: (phone: string, otp: string, deviceInfo?: DeviceInfo) => Promise<VerifyOtpResponse>;
   resendOtp: (phone: string) => Promise<ResendOtpResponse>;
-  refreshAccessToken: () => Promise<RefreshTokenResponse>;
+  refreshAccessToken: (options?: { silent?: boolean }) => Promise<RefreshTokenResponse>;
   signOut: (accessToken?: string) => Promise<void>;
   logout: () => Promise<void>;
   updateProfileName: (fullName: string) => Promise<void>;

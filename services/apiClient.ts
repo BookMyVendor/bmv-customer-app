@@ -1,4 +1,13 @@
-import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse, AxiosError } from 'axios';
+import axios, {
+  AxiosInstance,
+  AxiosRequestConfig,
+  AxiosResponse,
+  AxiosError,
+  InternalAxiosRequestConfig,
+} from 'axios';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { clearAuthStorage, persistSessionTokens } from '@/constants/authStorage';
+import { emitAuthSessionCleared, emitAuthTokensRefreshed } from '@/services/authSessionBridge';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://49.248.202.218:5000/';
 
@@ -17,6 +26,119 @@ const apiClient: AxiosInstance = axios.create({
   },
   timeout: 30000,
 });
+
+/** No interceptors — used only for refresh to avoid re-entry / loops */
+const noAuthClient: AxiosInstance = axios.create({
+  baseURL: API_URL,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+  timeout: 30000,
+});
+
+const SKIP_REFRESH_401_URL_PARTS = [
+  'auth-customer-send-otp',
+  'auth-customer-verify-otp',
+  'auth-customer-resend-otp',
+  'auth-customer-check-number',
+  'auth-refresh-token',
+  'auth-sign-out',
+];
+
+let refreshInFlight: Promise<{ accessToken: string; refreshToken: string; expiresIn: number }> | null =
+  null;
+
+function shouldAttemptRefreshForUrl(url: string | undefined): boolean {
+  if (!url) return false;
+  return !SKIP_REFRESH_401_URL_PARTS.some((fragment) => url.includes(fragment));
+}
+
+function getRequestAuthHeader(config: InternalAxiosRequestConfig): string | undefined {
+  const headers = config.headers;
+  if (!headers) return undefined;
+  const h = headers as {
+    get?: (name: string) => string | undefined;
+    Authorization?: string;
+    authorization?: string;
+  };
+  return (
+    h.get?.('Authorization') ??
+    h.Authorization ??
+    h.authorization
+  );
+}
+
+function setRequestAuthHeader(config: InternalAxiosRequestConfig, accessToken: string): void {
+  const bearer = `Bearer ${accessToken}`;
+  const headers = config.headers;
+  if (!headers) {
+    config.headers = { Authorization: bearer } as InternalAxiosRequestConfig['headers'];
+    return;
+  }
+  const h = headers as { set?: (key: string, value: string) => void; Authorization?: string };
+  if (typeof h.set === 'function') {
+    h.set('Authorization', bearer);
+  } else {
+    h.Authorization = bearer;
+  }
+}
+
+async function doTokenRefresh(): Promise<{ accessToken: string; refreshToken: string; expiresIn: number }> {
+  const storedRefresh = await AsyncStorage.getItem(REFRESH_TOKEN_KEY);
+  if (!storedRefresh) {
+    await clearAuthStorage();
+    emitAuthSessionCleared();
+    throw new Error('No refresh token');
+  }
+
+  try {
+    const res = await noAuthClient.post<Record<string, unknown>>('functions/v1/auth-refresh-token', {
+      refreshToken: storedRefresh,
+    });
+
+    const data = res.data;
+    if (data && typeof data === 'object' && 'success' in data && data.success === false) {
+      throw new Error((data.error as string) || 'Refresh failed');
+    }
+
+    const accessToken = data?.accessToken as string | undefined;
+    const refreshToken = (data?.refreshToken as string | undefined) || storedRefresh;
+
+    if (!accessToken) {
+      throw new Error('Invalid refresh response');
+    }
+
+    const expiresInSec =
+      typeof data?.expiresIn === 'number' && Number.isFinite(data.expiresIn) ? data.expiresIn : 3600;
+
+    await persistSessionTokens(accessToken, refreshToken, expiresInSec);
+
+    emitAuthTokensRefreshed(accessToken, refreshToken);
+    return { accessToken, refreshToken, expiresIn: expiresInSec };
+  } catch (e) {
+    await clearAuthStorage();
+    emitAuthSessionCleared();
+    throw e;
+  }
+}
+
+function ensureTokenRefresh(): Promise<{ accessToken: string; refreshToken: string; expiresIn: number }> {
+  if (!refreshInFlight) {
+    refreshInFlight = doTokenRefresh().finally(() => {
+      refreshInFlight = null;
+    });
+  }
+  return refreshInFlight;
+}
+
+/** Shared refresh used by 401 retry, proactive refresh, and manual refresh — single-flight. */
+export function refreshSessionTokens(): Promise<{
+  accessToken: string;
+  refreshToken: string;
+  expiresIn: number;
+}> {
+  return ensureTokenRefresh();
+}
 
 apiClient.interceptors.request.use(
   (config) => {
@@ -40,11 +162,34 @@ apiClient.interceptors.response.use(
     console.log('[API RESPONSE] Data:', JSON.stringify(response.data));
     return response;
   },
-  (error: AxiosError) => {
+  async (error: AxiosError) => {
     console.error(`[API RESPONSE ERROR] ${error.config?.method?.toUpperCase()} ${error.config?.url}`);
     console.error('[API RESPONSE ERROR] Status:', error.response?.status);
     console.error('[API RESPONSE ERROR] Data:', JSON.stringify(error.response?.data));
     console.error('[API RESPONSE ERROR] Message:', error.message);
+
+    const originalRequest = error.config as (InternalAxiosRequestConfig & { _retry?: boolean }) | undefined;
+    const status = error.response?.status;
+
+    if (
+      status === 401 &&
+      originalRequest &&
+      !originalRequest._retry &&
+      shouldAttemptRefreshForUrl(originalRequest.url)
+    ) {
+      const hadAuth = !!getRequestAuthHeader(originalRequest);
+      if (hadAuth) {
+        originalRequest._retry = true;
+        try {
+          const tokens = await ensureTokenRefresh();
+          setRequestAuthHeader(originalRequest, tokens.accessToken);
+          return apiClient.request(originalRequest);
+        } catch {
+          return Promise.reject(error);
+        }
+      }
+    }
+
     return Promise.reject(error);
   }
 );

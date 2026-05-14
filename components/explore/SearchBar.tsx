@@ -11,9 +11,9 @@ export const SearchBar = () => {
 
   const handleSearch = () => {
     if (query.trim()) {
-      router.push({
-        pathname: '/(tabs)/explore',
-        params: { query: query.trim(), city: city || undefined },
+      router.navigate({
+        pathname: '/explore',
+        params: { query: query.trim(), ...(city ? { city } : {}) },
       });
     }
   };
