@@ -49,9 +49,10 @@ const getColorForCategory = (index: number) => {
   return colors[index % colors.length];
 };
 
-const BudgetItem = ({ item, index, isGlobalEditMode, onAmountChange, onNameChange }: { item: WeddingBudgetPlanCategory, index: number, isGlobalEditMode: boolean, onAmountChange: (id: string, amount: string) => void, onNameChange: (id: string, name: string) => void }) => {
+const BudgetItem = ({ item, index, isGlobalEditMode, onAmountChange, onNameChange, onDelete }: { item: WeddingBudgetPlanCategory, index: number, isGlobalEditMode: boolean, onAmountChange: (id: string, amount: string) => void, onNameChange: (id: string, name: string) => void, onDelete: (id: string) => void }) => {
   const color = getColorForCategory(index);
   const icon = getIconForCategory(item.category_name);
+  const showDelete = isGlobalEditMode && item.is_custom;
 
   return (
     <View style={styles.budgetRow}>
@@ -86,6 +87,16 @@ const BudgetItem = ({ item, index, isGlobalEditMode, onAmountChange, onNameChang
         </View>
         <Text style={styles.itemPct}>{Math.round(item.percentage || 0)}% of total</Text>
       </View>
+      {showDelete && (
+        <TouchableOpacity
+          style={styles.deleteBtn}
+          onPress={() => onDelete(item.id)}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          accessibilityLabel={`Delete ${item.category_name}`}
+        >
+          <Ionicons name="trash-outline" size={20} color="#EF4444" />
+        </TouchableOpacity>
+      )}
     </View>
   );
 };
@@ -211,6 +222,24 @@ export default function AIBudgetPlannerScreen() {
       }
       return cat;
     }));
+  };
+
+  const handleDeleteCategory = (id: string) => {
+    const category = categories.find(c => c.id === id);
+    if (!category?.is_custom) return;
+
+    Alert.alert(
+      'Delete Expense',
+      `Remove "${category.category_name}" from your budget?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => setCategories(prev => prev.filter(cat => cat.id !== id)),
+        },
+      ]
+    );
   };
 
   const addCustomExpense = () => {
@@ -519,6 +548,7 @@ export default function AIBudgetPlannerScreen() {
                   isGlobalEditMode={isGlobalEditMode}
                   onAmountChange={handleAmountChange} 
                   onNameChange={handleNameChange}
+                  onDelete={handleDeleteCategory}
                 />
                 {idx < categories.length - 1 && <View style={styles.separator} />}
               </View>
@@ -715,6 +745,7 @@ const styles = StyleSheet.create({
   barTrack: { height: 4, backgroundColor: '#F0F2F5', borderRadius: 2, overflow: 'hidden', marginBottom: 4 },
   barFill: { height: '100%', borderRadius: 2 },
   itemPct: { fontSize: 10, color: '#999', fontWeight: '600' },
+  deleteBtn: { padding: 4, marginLeft: 8 },
 
   // Add Button
   addBtn: {
