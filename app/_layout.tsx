@@ -13,7 +13,7 @@ export const unstable_settings = {
 };
 
 function RootNavigation() {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, needsProfileSetup } = useAuth();
   const segments = useSegments();
   const router = useRouter();
   const colorScheme = useColorScheme();
@@ -26,11 +26,10 @@ function RootNavigation() {
     if (!isAuthenticated && !inAuthGroup) {
       // Redirect to the login page.
       router.replace('/login');
-    } else if (isAuthenticated && inAuthGroup) {
-      // Redirect to the tabs page.
+    } else if (isAuthenticated && inAuthGroup && !needsProfileSetup) {
       router.replace('/(tabs)');
     }
-  }, [isAuthenticated, isLoading, segments]);
+  }, [isAuthenticated, isLoading, needsProfileSetup, segments]);
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>

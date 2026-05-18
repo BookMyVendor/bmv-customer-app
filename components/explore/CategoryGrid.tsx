@@ -114,7 +114,9 @@ export const CategoryGrid = () => {
               >
                 <Ionicons name={getIconForCategory(cat)} size={28} color="#003366" />
               </TouchableOpacity>
-              <Text style={styles.categoryName}>{getCategoryDisplayName(cat)}</Text>
+              <Text style={styles.categoryName} numberOfLines={2} ellipsizeMode="tail">
+                {getCategoryDisplayName(cat)}
+              </Text>
             </View>
           ))}
         </ScrollView>
@@ -163,6 +165,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
     marginRight: 14,
+    maxWidth: 88,
   },
   iconCard: {
     width: 80,
@@ -174,9 +177,11 @@ const styles = StyleSheet.create({
     borderColor: '#f0f0f0',
   },
   categoryName: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '500',
     color: '#444',
+    textAlign: 'center',
+    width: '100%',
   },
   loadingContainer: {
     paddingVertical: 20,

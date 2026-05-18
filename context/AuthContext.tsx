@@ -6,7 +6,7 @@ import {
   AuthContextType,
   DeviceInfo,
   SendOtpResponse,
-  VerifyOtpResponse,
+  VerifyOtpResult,
   ResendOtpResponse,
   RefreshTokenResponse,
 } from '@/types/auth.types';
@@ -17,9 +17,11 @@ import {
   REFRESH_TOKEN_KEY,
   USER_KEY,
   ACCESS_TOKEN_EXPIRES_AT_KEY,
+  NEEDS_PROFILE_SETUP_KEY,
   clearAuthStorage,
   persistSessionTokens,
 } from '@/constants/authStorage';
+import { resolveNeedsProfileSetup } from '@/utils/profileSetup';
 import { setAuthBridgeListener } from '@/services/authSessionBridge';
 import { refreshSessionTokens } from '@/services/apiClient';
 import {
@@ -36,6 +38,7 @@ type RefreshFn = (options?: { silent?: boolean }) => Promise<RefreshTokenRespons
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [authState, setAuthState] = useState<AuthState>({
     isAuthenticated: false,
+    needsProfileSetup: false,
     user: null,
     accessToken: null,
     refreshToken: null,
@@ -63,6 +66,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       clearProactiveRefreshSchedule();
       setAuthState({
         isAuthenticated: false,
+        needsProfileSetup: false,
         user: null,
         accessToken: null,
         refreshToken: null,
@@ -128,16 +132,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const loadAuthData = async () => {
     try {
-      const [accessToken, refreshToken, userStr] = await Promise.all([
+      const [accessToken, refreshToken, userStr, needsProfileSetupStr] = await Promise.all([
         AsyncStorage.getItem(ACCESS_TOKEN_KEY),
         AsyncStorage.getItem(REFRESH_TOKEN_KEY),
         AsyncStorage.getItem(USER_KEY),
+        AsyncStorage.getItem(NEEDS_PROFILE_SETUP_KEY),
       ]);
 
       if (accessToken && refreshToken && userStr) {
         const user = JSON.parse(userStr);
         setAuthState({
           isAuthenticated: true,
+          needsProfileSetup: needsProfileSetupStr === '1',
           user,
           accessToken,
           refreshToken,
@@ -147,6 +153,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } else {
         setAuthState({
           isAuthenticated: false,
+          needsProfileSetup: false,
           user: null,
           accessToken: null,
           refreshToken: null,
@@ -157,6 +164,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (error) {
       setAuthState({
         isAuthenticated: false,
+        needsProfileSetup: false,
         user: null,
         accessToken: null,
         refreshToken: null,
@@ -187,48 +195,65 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     otp: string,
     deviceInfo?: DeviceInfo,
     fullName?: string
-  ): Promise<VerifyOtpResponse> => {
+  ): Promise<VerifyOtpResult> => {
     setAuthState((prev) => ({ ...prev, isLoading: true, error: null }));
     try {
       const response = await verifyOtp(phone, otp, deviceInfo);
-      
-      // Call customers-by-phone as requested
-      const customerResponse = await getCustomerByPhone(phone);
-      
-      // If fullName is provided, call customers-me-update
+
+      let customerResponse: Awaited<ReturnType<typeof getCustomerByPhone>> | null = null;
+      try {
+        customerResponse = await getCustomerByPhone(phone);
+      } catch (customerError) {
+        console.warn('[AUTH] customers-by-phone failed after OTP verify:', customerError);
+      }
+
       if (fullName) {
         await updateMe({
           name: fullName,
           email: response.user.email || undefined,
           registration_source: 'mobile',
-          // other fields as null as per payload example
           address: null,
           city: null,
           state: null,
           pincode: null,
         } as any, response.accessToken);
+        try {
+          customerResponse = await getCustomerByPhone(phone);
+        } catch (customerError) {
+          console.warn('[AUTH] customers-by-phone re-fetch failed:', customerError);
+        }
       }
 
-      // Re-fetch customer data if updated or just use the response
-      const updatedCustomer = fullName ? await getCustomerByPhone(phone) : customerResponse;
-
+      const customerName = customerResponse?.customer?.name;
       const enrichedUser = {
         ...response.user,
-        first_name: updatedCustomer.customer?.name?.split(' ')[0] || response.user.first_name,
-        last_name: updatedCustomer.customer?.name?.split(' ').slice(1).join(' ') || response.user.last_name,
-        phone: updatedCustomer.customer?.phone || response.user.phone,
-        created_at: updatedCustomer.customer?.created_at || response.user.created_at,
+        first_name: customerName?.split(' ')[0] || response.user.first_name,
+        last_name: customerName?.split(' ').slice(1).join(' ') || response.user.last_name,
+        phone: customerResponse?.customer?.phone || response.user.phone,
+        created_at: customerResponse?.customer?.created_at || response.user.created_at,
       };
-      
+
+      const needsProfileSetup = fullName
+        ? false
+        : resolveNeedsProfileSetup(
+            customerName,
+            enrichedUser.first_name,
+            enrichedUser.last_name
+          );
+
       await persistSessionTokens(
         response.accessToken,
         response.refreshToken,
         response.expiresIn
       );
-      await AsyncStorage.setItem(USER_KEY, JSON.stringify(enrichedUser));
+      await AsyncStorage.multiSet([
+        [USER_KEY, JSON.stringify(enrichedUser)],
+        [NEEDS_PROFILE_SETUP_KEY, needsProfileSetup ? '1' : '0'],
+      ]);
 
       setAuthState({
         isAuthenticated: true,
+        needsProfileSetup,
         user: enrichedUser,
         accessToken: response.accessToken,
         refreshToken: response.refreshToken,
@@ -236,7 +261,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         error: null,
       });
 
-      return response;
+      return { ...response, needsProfileSetup };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to verify OTP';
       setAuthState((prev) => ({ ...prev, isLoading: false, error: errorMessage }));
@@ -264,6 +289,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       setAuthState({
         isAuthenticated: false,
+        needsProfileSetup: false,
         user: null,
         accessToken: null,
         refreshToken: null,
@@ -339,20 +365,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         pincode: null,
       } as any, authState.accessToken);
 
-      // Re-fetch customer data to get enriched user
-      const updatedCustomer = await getCustomerByPhone(authState.user.phone);
-      
+      let customerName = fullName.trim();
+      try {
+        const updatedCustomer = await getCustomerByPhone(authState.user.phone);
+        customerName = updatedCustomer.customer?.name?.trim() || customerName;
+      } catch (customerError) {
+        console.warn('[AUTH] customers-by-phone failed after name update:', customerError);
+      }
+
+      const nameParts = customerName.split(/\s+/);
       const enrichedUser = {
         ...authState.user,
-        first_name: updatedCustomer.customer?.name?.split(' ')[0] || authState.user.first_name,
-        last_name: updatedCustomer.customer?.name?.split(' ').slice(1).join(' ') || authState.user.last_name,
+        first_name: nameParts[0] || authState.user.first_name,
+        last_name: nameParts.slice(1).join(' ') || authState.user.last_name,
       };
 
-      await AsyncStorage.setItem(USER_KEY, JSON.stringify(enrichedUser));
+      await AsyncStorage.multiSet([
+        [USER_KEY, JSON.stringify(enrichedUser)],
+        [NEEDS_PROFILE_SETUP_KEY, '0'],
+      ]);
 
       setAuthState((prev) => ({
         ...prev,
         user: enrichedUser,
+        needsProfileSetup: false,
         isLoading: false,
       }));
     } catch (error) {

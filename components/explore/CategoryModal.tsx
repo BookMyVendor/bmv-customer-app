@@ -1,7 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Dimensions,
   FlatList,
   Modal,
   Pressable,
@@ -9,6 +8,7 @@ import {
   Text,
   TouchableOpacity,
   View,
+  useWindowDimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CategoryTreeNode } from '@/types/category.types';
@@ -20,11 +20,9 @@ interface CategoryModalProps {
   onSelectCategory: (category: CategoryTreeNode) => void;
 }
 
-const { width: SCREEN_W } = Dimensions.get('window');
-const SHEET_H_PAD = 20;
-const GRID_GAP = 12;
-const NUM_COLS = 2;
-const CARD_W = Math.floor((SCREEN_W - SHEET_H_PAD * 2 - GRID_GAP * (NUM_COLS - 1)) / NUM_COLS);
+const SHEET_H_PAD = 16;
+const GRID_GAP = 10;
+const NARROW_BREAKPOINT = 380;
 
 type TabKey = 'event' | 'service' | 'rental';
 
@@ -86,8 +84,18 @@ function getCategoryDisplayName(category: CategoryTreeNode): string {
 
 export const CategoryModal = ({ visible, onClose, categories, onSelectCategory }: CategoryModalProps) => {
   const insets = useSafeAreaInsets();
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const [stack, setStack] = useState<CategoryTreeNode[]>([]);
   const [activeTab, setActiveTab] = useState<TabKey>('event');
+
+  const numCols = windowWidth < NARROW_BREAKPOINT ? 1 : 2;
+  const contentWidth = windowWidth - SHEET_H_PAD * 2;
+  const cardWidth =
+    numCols === 1
+      ? contentWidth
+      : Math.floor((contentWidth - GRID_GAP * (numCols - 1)) / numCols);
+  const sheetHeight = Math.min(windowHeight * 0.78, windowHeight - insets.top - 24);
+  const isNarrow = windowWidth < NARROW_BREAKPOINT;
 
   const eventRoots = useMemo(
     () => categories.filter((c) => c.category_type === 'event'),
@@ -155,23 +163,27 @@ export const CategoryModal = ({ visible, onClose, categories, onSelectCategory }
     const theme = getCategoryTheme(item);
 
     return (
-      <View style={[styles.card, { width: CARD_W }]}>
+      <View style={[styles.card, { width: cardWidth }]}>
         <Pressable
           style={({ pressed }) => [styles.cardMain, pressed && styles.cardMainPressed]}
           onPress={() => applyFilter(item)}
           android_ripple={{ color: 'rgba(15,23,42,0.05)' }}
         >
           <View style={[styles.leadIcon, { backgroundColor: theme.surface }]}>
-            <Ionicons name={theme.icon} size={22} color={theme.primary} />
+            <Ionicons name={theme.icon} size={isNarrow ? 20 : 22} color={theme.primary} />
           </View>
           <View style={styles.cardText}>
-            <Text style={styles.cardTitle} numberOfLines={2}>
+            <Text style={[styles.cardTitle, isNarrow && styles.cardTitleNarrow]} numberOfLines={2} ellipsizeMode="tail">
               {getCategoryDisplayName(item)}
             </Text>
             {hasKids ? (
-              <Text style={styles.cardSub}>{childCount} inside</Text>
+              <Text style={styles.cardSub} numberOfLines={1}>
+                {childCount} inside
+              </Text>
             ) : (
-              <Text style={styles.cardSubMuted}>Search</Text>
+              <Text style={styles.cardSubMuted} numberOfLines={1}>
+                Search
+              </Text>
             )}
           </View>
         </Pressable>
@@ -184,7 +196,7 @@ export const CategoryModal = ({ visible, onClose, categories, onSelectCategory }
             hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
             accessibilityLabel={`Open ${childCount} subcategories`}
           >
-            <Ionicons name="chevron-forward" size={20} color={theme.primary} />
+            <Ionicons name="chevron-forward" size={18} color={theme.primary} />
           </TouchableOpacity>
         ) : null}
       </View>
@@ -197,7 +209,12 @@ export const CategoryModal = ({ visible, onClose, categories, onSelectCategory }
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <View style={styles.backdrop}>
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
-        <View style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, 20) }]}>
+        <View
+          style={[
+            styles.sheet,
+            { height: sheetHeight, paddingBottom: Math.max(insets.bottom, 12) },
+          ]}
+        >
           <View style={styles.handleWrap}>
             <View style={styles.handle} />
           </View>
@@ -205,10 +222,13 @@ export const CategoryModal = ({ visible, onClose, categories, onSelectCategory }
           <View style={styles.sheetHeader}>
             <View style={styles.sheetHeaderText}>
               <Text style={styles.sheetTitle}>Categories</Text>
-              <Text style={styles.sheetSubtitle}>
-                Tap the card to search. Tap the <Text style={styles.sheetSubtitleEm}>arrow</Text> on the right to open
-                subcategories.
-              </Text>
+              {!isNarrow ? (
+                <Text style={styles.sheetSubtitle}>
+                  Tap a card to search. Tap the <Text style={styles.sheetSubtitleEm}>arrow</Text> for subcategories.
+                </Text>
+              ) : (
+                <Text style={styles.sheetSubtitle}>Tap to search · arrow for subcategories</Text>
+              )}
             </View>
             <TouchableOpacity onPress={onClose} style={styles.closeCircle} hitSlop={12} accessibilityLabel="Close">
               <Ionicons name="close" size={22} color="#475569" />
@@ -262,13 +282,14 @@ export const CategoryModal = ({ visible, onClose, categories, onSelectCategory }
           )}
 
           <FlatList
-            key={listKey}
+            key={`${listKey}-${numCols}`}
+            style={styles.list}
             data={gridData}
             keyExtractor={(item) => item.id}
-            numColumns={NUM_COLS}
-            columnWrapperStyle={styles.columnWrap}
+            numColumns={numCols}
+            columnWrapperStyle={numCols > 1 ? styles.columnWrap : undefined}
             contentContainerStyle={styles.gridContent}
-            scrollEnabled={gridData.length > 8}
+            scrollEnabled
             showsVerticalScrollIndicator={false}
             ListEmptyComponent={
               <View style={styles.empty}>
@@ -297,7 +318,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    maxHeight: '90%',
     paddingHorizontal: SHEET_H_PAD,
     paddingTop: 2,
     borderTopWidth: 1,
@@ -309,6 +329,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 28,
     elevation: 28,
+  },
+  list: {
+    flex: 1,
   },
   handleWrap: {
     alignItems: 'center',
@@ -425,19 +448,17 @@ const styles = StyleSheet.create({
     paddingTop: 4,
   },
   columnWrap: {
-    justifyContent: 'space-between',
-    marginBottom: GRID_GAP,
     gap: GRID_GAP,
+    marginBottom: GRID_GAP,
   },
-  /** Reference: horizontal row card, white, soft shadow, large radius */
   card: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    paddingVertical: 12,
-    paddingLeft: 12,
-    paddingRight: 10,
+    borderRadius: 16,
+    paddingVertical: 10,
+    paddingLeft: 10,
+    paddingRight: 8,
     borderWidth: 1,
     borderColor: '#F0F0F2',
     shadowColor: '#000',
@@ -445,35 +466,43 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.06,
     shadowRadius: 10,
     elevation: 3,
-    minHeight: 72,
+    minHeight: 68,
+    overflow: 'hidden',
   },
   cardMain: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     minWidth: 0,
+    flexShrink: 1,
   },
   cardMainPressed: {
     opacity: 0.92,
   },
   leadIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
+    width: 40,
+    height: 40,
+    borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 10,
+    marginRight: 8,
+    flexShrink: 0,
   },
   cardText: {
     flex: 1,
     minWidth: 0,
     justifyContent: 'center',
+    flexShrink: 1,
   },
   cardTitle: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '800',
     color: '#111827',
     letterSpacing: -0.2,
+    lineHeight: 17,
+  },
+  cardTitleNarrow: {
+    fontSize: 14,
     lineHeight: 18,
   },
   cardSub: {
@@ -489,12 +518,13 @@ const styles = StyleSheet.create({
     color: '#9CA3AF',
   },
   drillBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
+    width: 34,
+    height: 34,
+    borderRadius: 10,
     justifyContent: 'center',
     alignItems: 'center',
-    marginLeft: 8,
+    marginLeft: 6,
+    flexShrink: 0,
   },
   empty: {
     alignItems: 'center',

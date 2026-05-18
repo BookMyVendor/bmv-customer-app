@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -10,8 +10,10 @@ import {
   ActivityIndicator,
   Image,
   StatusBar,
-  Dimensions,
   Modal,
+  ScrollView,
+  KeyboardAvoidingView,
+  useWindowDimensions,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -20,8 +22,6 @@ import { LinearGradient } from 'expo-linear-gradient';
 import MaskedView from '@react-native-masked-view/masked-view';
 import { sendOtp } from '../services/authService';
 import { useAuth } from '@/context/AuthContext';
-
-const { width, height } = Dimensions.get('window');
 
 const C = {
   navy: '#050A30',
@@ -36,43 +36,36 @@ const C = {
 };
 
 const OTP_LEN = 6;
-const OTP_CELL = Math.min(52, Math.floor((width - 22 * 2 - 20 * 2 - 8 * (OTP_LEN - 1)) / OTP_LEN));
-
-const STAR_POSITIONS = [
-  { top: 72, left: width * 0.12, size: 3 },
-  { top: 98, left: width * 0.22, size: 2 },
-  { top: 56, right: width * 0.18, size: 2 },
-  { top: 130, right: width * 0.28, size: 3 },
-  { top: 180, left: width * 0.08, size: 2 },
-  { top: 200, right: width * 0.12, size: 4 },
-  { top: 250, left: width * 0.35, size: 2 },
-];
+const NARROW_WIDTH = 360;
+const SHORT_HEIGHT = 700;
 
 function maskMobile(num: string) {
   if (num.length !== 10) return '+91 •••••• •••';
   return `+91 ${num.slice(0, 2)}•••• •${num.slice(-3)}`;
 }
 
-function GradientHeadline() {
+function GradientHeadline({ titleWidth, fontSize }: { titleWidth: number; fontSize: number }) {
   const maskText = (
-    <Text style={styles.gradientTitleMask}>Perfectly Planned</Text>
+    <Text style={[styles.gradientTitleMask, { fontSize, lineHeight: fontSize + 10 }]}>
+      Perfectly Planned
+    </Text>
   );
 
   if (Platform.OS === 'web') {
     return (
-      <Text style={styles.gradientTitleWeb}>
+      <Text style={[styles.gradientTitleWeb, { fontSize }]}>
         Perfectly <Text style={{ color: C.purple }}>Planned</Text>
       </Text>
     );
   }
 
   return (
-    <MaskedView style={styles.gradientTitleWrapper} maskElement={maskText}>
+    <MaskedView style={[styles.gradientTitleWrapper, { height: fontSize + 14 }]} maskElement={maskText}>
       <LinearGradient
         colors={[C.blue, C.purple]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 0 }}
-        style={styles.gradientTitleFill}
+        style={{ height: fontSize + 14, width: titleWidth }}
       />
     </MaskedView>
   );
@@ -98,9 +91,33 @@ export default function LoginScreen() {
   const otpInputRefs = useRef<(TextInput | null)[]>([]);
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { verifyOtp, resendOtp, updateProfileName } = useAuth();
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+  const { verifyOtp, resendOtp, updateProfileName, needsProfileSetup } = useAuth();
 
-  const headerPadTop = Math.max(insets.top, 12) + 8;
+  const isNarrow = windowWidth < NARROW_WIDTH;
+  const isShort = windowHeight < SHORT_HEIGHT;
+  const screenPad = isNarrow ? 12 : 20;
+  const cardPad = isNarrow ? 14 : 22;
+  const logoSize = isNarrow ? 96 : isShort ? 108 : 132;
+  const titleFontSize = isNarrow ? 24 : 30;
+  const headerMinHeight = isShort ? windowHeight * 0.34 : windowHeight * 0.38;
+  const otpGap = isNarrow ? 5 : 8;
+  const otpFontSize = isNarrow ? 18 : 22;
+
+  const starPositions = useMemo(
+    () => [
+      { top: 56, left: windowWidth * 0.1, size: 3 },
+      { top: 82, left: windowWidth * 0.2, size: 2 },
+      { top: 44, right: windowWidth * 0.16, size: 2 },
+      { top: 110, right: windowWidth * 0.24, size: 3 },
+      { top: 150, left: windowWidth * 0.06, size: 2 },
+      { top: 168, right: windowWidth * 0.1, size: 4 },
+      { top: 200, left: windowWidth * 0.32, size: 2 },
+    ],
+    [windowWidth]
+  );
+
+  const headerPadTop = Math.max(insets.top, 12) + (isNarrow ? 4 : 8);
 
   useEffect(() => {
     if (mobile) setMobileNumber(mobile);
@@ -130,6 +147,12 @@ export default function LoginScreen() {
     }, 1000);
     return () => clearInterval(t);
   }, [step]);
+
+  useEffect(() => {
+    if (needsProfileSetup) {
+      setShowNameModal(true);
+    }
+  }, [needsProfileSetup]);
 
   const goToVerifyStep = () => {
     setStep(2);
@@ -171,7 +194,7 @@ export default function LoginScreen() {
     setIsVerifying(true);
     try {
       const response = await verifyOtp(phoneNumber, otpValue);
-      if (response.newUser || !response.user.first_name) {
+      if (response.needsProfileSetup) {
         setShowNameModal(true);
       } else {
         router.dismissAll();
@@ -180,11 +203,7 @@ export default function LoginScreen() {
     } catch (error) {
       console.error('[LOGIN] Verify failed:', error);
       const errorMessage = error instanceof Error ? error.message : 'Failed to verify OTP';
-      if (otpValue === '123456') {
-        setShowNameModal(true);
-      } else {
-        Alert.alert('Verification Failed', errorMessage);
-      }
+      Alert.alert('Verification Failed', errorMessage);
     } finally {
       setIsVerifying(false);
     }
@@ -202,7 +221,14 @@ export default function LoginScreen() {
       router.dismissAll();
       router.replace('/(tabs)');
     } catch (e) {
-      Alert.alert('Error', 'Failed to save name. Please try again.');
+      const message =
+        e instanceof Error ? e.message : 'Failed to save name. Please try again.';
+      Alert.alert(
+        'Error',
+        message.toLowerCase().includes('authenticated')
+          ? 'Session expired. Please verify OTP again.'
+          : message
+      );
     } finally {
       setIsVerifying(false);
     }
@@ -246,22 +272,49 @@ export default function LoginScreen() {
   const otpFilled = otp.every((d) => d !== '');
 
   return (
-    <View style={styles.container}>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
       <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
 
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+        bounces={false}
+      >
       <LinearGradient
         colors={['#050A30', '#0c1240', '#1a0b38', '#12082e']}
         locations={[0, 0.35, 0.72, 1]}
-        style={[styles.headerBackground, { paddingTop: headerPadTop }]}
+        style={[
+          styles.headerBackground,
+          { paddingTop: headerPadTop, minHeight: headerMinHeight, paddingBottom: isNarrow ? 16 : 28 },
+        ]}
       >
-        <View style={styles.palmSilhouette} />
-        <View style={styles.glowOrbOuter}>
+        <View
+          style={[
+            styles.palmSilhouette,
+            {
+              left: -windowWidth * 0.12,
+              top: windowHeight * 0.06,
+              width: windowWidth * 0.42,
+              height: windowHeight * 0.26,
+            },
+          ]}
+        />
+        <View
+          style={[
+            styles.glowOrbOuter,
+            { top: windowHeight * 0.08, width: isNarrow ? 100 : 140, height: isNarrow ? 100 : 140 },
+          ]}
+        >
           <LinearGradient
             colors={['rgba(156,39,176,0.55)', 'rgba(33,150,243,0.15)', 'transparent']}
             style={styles.glowOrbGradient}
           />
         </View>
-        {STAR_POSITIONS.map((s, i) => (
+        {starPositions.map((s, i) => (
           <View
             key={i}
             style={[
@@ -277,17 +330,27 @@ export default function LoginScreen() {
           />
         ))}
 
-        <View style={styles.topSection}>
-          <View style={styles.logoCircle}>
+        <View style={[styles.topSection, { paddingHorizontal: isNarrow ? 16 : 24 }]}>
+          <View
+            style={[
+              styles.logoCircle,
+              {
+                width: logoSize,
+                height: logoSize,
+                borderRadius: logoSize / 2,
+                marginBottom: isNarrow ? 12 : 18,
+              },
+            ]}
+          >
             <Image
               source={require('../assets/images/bmv_internal_logo.png')}
-              style={styles.logoImage}
+              style={{ width: logoSize * 0.76, height: logoSize * 0.76 }}
               resizeMode="contain"
             />
           </View>
 
-          <Text style={styles.headerTitle}>Your Event,</Text>
-          <GradientHeadline />
+          <Text style={[styles.headerTitle, isNarrow && styles.headerTitleNarrow]}>Your Event,</Text>
+          <GradientHeadline titleWidth={windowWidth - (isNarrow ? 32 : 40)} fontSize={titleFontSize} />
 
           <View style={styles.headerStarSeparator}>
             <View style={styles.headerStarLine} />
@@ -299,24 +362,33 @@ export default function LoginScreen() {
         </View>
       </LinearGradient>
 
-      <View style={styles.cardContainer}>
-        <View style={styles.card}>
-          {/* Two-step indicator */}
+      <View style={[styles.cardContainer, { paddingHorizontal: screenPad, marginTop: isNarrow ? -40 : -56 }]}>
+        <View style={[styles.card, { paddingHorizontal: cardPad }]}>
           <View style={styles.stepRow}>
-            <View style={[styles.stepPill, step === 1 && styles.stepPillActive]}>
-              <View style={[styles.stepBadge, step === 1 && styles.stepBadgeActive]}>
+            <View style={[styles.stepPill, step === 1 && styles.stepPillActive, isNarrow && styles.stepPillCompact]}>
+              <View style={[styles.stepBadge, step === 1 && styles.stepBadgeActive, isNarrow && styles.stepBadgeCompact]}>
                 <Text style={[styles.stepBadgeText, step === 1 && styles.stepBadgeTextActive]}>1</Text>
               </View>
-              <Text style={[styles.stepPillLabel, step === 1 && styles.stepPillLabelActive]}>Mobile</Text>
+              <Text
+                style={[styles.stepPillLabel, step === 1 && styles.stepPillLabelActive, isNarrow && styles.stepPillLabelCompact]}
+                numberOfLines={1}
+              >
+                Mobile
+              </Text>
             </View>
-            <View style={styles.stepConnector}>
+            <View style={[styles.stepConnector, isNarrow && styles.stepConnectorCompact]}>
               <View style={[styles.stepConnectorLine, step === 2 && styles.stepConnectorLineDone]} />
             </View>
-            <View style={[styles.stepPill, step === 2 && styles.stepPillActive]}>
-              <View style={[styles.stepBadge, step === 2 && styles.stepBadgeActive]}>
+            <View style={[styles.stepPill, step === 2 && styles.stepPillActive, isNarrow && styles.stepPillCompact]}>
+              <View style={[styles.stepBadge, step === 2 && styles.stepBadgeActive, isNarrow && styles.stepBadgeCompact]}>
                 <Text style={[styles.stepBadgeText, step === 2 && styles.stepBadgeTextActive]}>2</Text>
               </View>
-              <Text style={[styles.stepPillLabel, step === 2 && styles.stepPillLabelActive]}>Verify OTP</Text>
+              <Text
+                style={[styles.stepPillLabel, step === 2 && styles.stepPillLabelActive, isNarrow && styles.stepPillLabelCompact]}
+                numberOfLines={1}
+              >
+                {isNarrow ? 'OTP' : 'Verify OTP'}
+              </Text>
             </View>
           </View>
 
@@ -327,30 +399,36 @@ export default function LoginScreen() {
                   colors={[C.blue, C.purple]}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
-                  style={styles.handIconGradient}
+                  style={[styles.handIconGradient, isNarrow && styles.handIconGradientCompact]}
                 >
-                  <Text style={styles.handEmoji}>👋</Text>
+                  <Text style={[styles.handEmoji, isNarrow && styles.handEmojiCompact]}>👋</Text>
                 </LinearGradient>
                 <View style={styles.cardHeaderText}>
-                  <Text style={styles.welcomeText}>Welcome Back!</Text>
-                  <Text style={styles.subtitle}>Enter your mobile number to get started</Text>
+                  <Text style={[styles.welcomeText, isNarrow && styles.welcomeTextCompact]}>Welcome Back!</Text>
+                  <Text style={[styles.subtitle, isNarrow && styles.subtitleCompact]} numberOfLines={2}>
+                    Enter your mobile number to get started
+                  </Text>
                 </View>
               </View>
 
               <View style={styles.formSection}>
                 <Text style={styles.inputLabel}>MOBILE NUMBER</Text>
-                <View style={[styles.inputGroup, isFocused && styles.inputGroupFocused]}>
-                  <TouchableOpacity style={styles.countryPicker} activeOpacity={0.7}>
-                    <Text style={styles.countryCode}>+91</Text>
-                    <Ionicons name="chevron-down" size={16} color={C.mutedBlueGrey} />
+                <View style={[styles.inputGroup, isFocused && styles.inputGroupFocused, isNarrow && styles.inputGroupCompact]}>
+                  <TouchableOpacity style={[styles.countryPicker, isNarrow && styles.countryPickerCompact]} activeOpacity={0.7}>
+                    <Text style={[styles.countryCode, isNarrow && styles.countryCodeCompact]}>+91</Text>
+                    {!isNarrow ? (
+                      <Ionicons name="chevron-down" size={16} color={C.mutedBlueGrey} />
+                    ) : null}
                   </TouchableOpacity>
                   <View style={styles.divider} />
-                  <View style={styles.phoneIconWrap}>
-                    <Ionicons name="call-outline" size={20} color={C.purple} />
-                  </View>
+                  {!isNarrow ? (
+                    <View style={styles.phoneIconWrap}>
+                      <Ionicons name="call-outline" size={20} color={C.purple} />
+                    </View>
+                  ) : null}
                   <TextInput
-                    style={styles.input}
-                    placeholder="Enter 10-digit mobile number"
+                    style={[styles.input, isNarrow && styles.inputCompact]}
+                    placeholder={isNarrow ? '10-digit mobile' : 'Enter 10-digit mobile number'}
                     placeholderTextColor="#B0BEC5"
                     keyboardType="phone-pad"
                     maxLength={10}
@@ -377,7 +455,7 @@ export default function LoginScreen() {
                       <ActivityIndicator color={C.white} />
                     ) : (
                       <>
-                        <Text style={styles.buttonText}>Get OTP</Text>
+                        <Text style={[styles.buttonText, isNarrow && styles.buttonTextCompact]}>Get OTP</Text>
                         <View style={styles.arrowIconContainer}>
                           <Ionicons name="arrow-forward" size={16} color={C.blue} />
                         </View>
@@ -386,32 +464,33 @@ export default function LoginScreen() {
                   </LinearGradient>
                 </TouchableOpacity>
 
-                <View style={styles.securityContainer}>
+                <View style={[styles.securityContainer, isNarrow && styles.securityContainerCompact]}>
                   <View style={styles.badgeColumn}>
-                    <View style={[styles.badgeIconCircle, { backgroundColor: '#E3F2FD' }]}>
-                      <Ionicons name="shield-checkmark" size={18} color={C.blue} />
+                    <View style={[styles.badgeIconCircle, isNarrow && styles.badgeIconCircleCompact, { backgroundColor: '#E3F2FD' }]}>
+                      <Ionicons name="shield-checkmark" size={isNarrow ? 16 : 18} color={C.blue} />
                     </View>
-                    <Text style={styles.badgeTitle}>Secure</Text>
-                    <Text style={styles.badgeSub}>Your data is safe</Text>
+                    <Text style={[styles.badgeTitle, isNarrow && styles.badgeTitleCompact]}>Secure</Text>
+                    {!isNarrow ? <Text style={styles.badgeSub}>Your data is safe</Text> : null}
                   </View>
                   <View style={styles.verticalDivider} />
                   <View style={styles.badgeColumn}>
-                    <View style={[styles.badgeIconCircle, { backgroundColor: '#E8F5E9' }]}>
-                      <Ionicons name="lock-closed" size={18} color={C.green} />
+                    <View style={[styles.badgeIconCircle, isNarrow && styles.badgeIconCircleCompact, { backgroundColor: '#E8F5E9' }]}>
+                      <Ionicons name="lock-closed" size={isNarrow ? 16 : 18} color={C.green} />
                     </View>
-                    <Text style={styles.badgeTitle}>Encrypted</Text>
-                    <Text style={styles.badgeSub}>End-to-end secure</Text>
+                    <Text style={[styles.badgeTitle, isNarrow && styles.badgeTitleCompact]}>Encrypted</Text>
+                    {!isNarrow ? <Text style={styles.badgeSub}>End-to-end secure</Text> : null}
                   </View>
                   <View style={styles.verticalDivider} />
                   <View style={styles.badgeColumn}>
-                    <View style={[styles.badgeIconCircle, { backgroundColor: '#F3E5F5' }]}>
-                      <Ionicons name="shield-half" size={18} color={C.purple} />
+                    <View style={[styles.badgeIconCircle, isNarrow && styles.badgeIconCircleCompact, { backgroundColor: '#F3E5F5' }]}>
+                      <Ionicons name="shield-half" size={isNarrow ? 16 : 18} color={C.purple} />
                     </View>
-                    <Text style={styles.badgeTitle}>Private</Text>
-                    <Text style={styles.badgeSub}>100% confidential</Text>
+                    <Text style={[styles.badgeTitle, isNarrow && styles.badgeTitleCompact]}>Private</Text>
+                    {!isNarrow ? <Text style={styles.badgeSub}>100% confidential</Text> : null}
                   </View>
                 </View>
 
+                {!isNarrow ? (
                 <TouchableOpacity
                   style={styles.termsRow}
                   onPress={() => setTermsAccepted(!termsAccepted)}
@@ -428,7 +507,10 @@ export default function LoginScreen() {
                     <Text style={styles.termsLink}>Privacy Policy</Text>
                   </Text>
                 </TouchableOpacity>
+                ) : null}
 
+                {!isNarrow ? (
+                <>
                 <View style={styles.helpDividerWrap}>
                   <View style={styles.helpDividerLine} />
                   <Ionicons name="star" size={10} color="#C5CAE9" />
@@ -442,6 +524,8 @@ export default function LoginScreen() {
                   <Text style={styles.helpText}>Need help with your account?</Text>
                   <Ionicons name="chevron-forward" size={18} color={C.purple} />
                 </TouchableOpacity>
+                </>
+                ) : null}
               </View>
             </>
           ) : (
@@ -451,19 +535,21 @@ export default function LoginScreen() {
                   colors={[C.blue, C.purple]}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
-                  style={styles.handIconGradient}
+                  style={[styles.handIconGradient, isNarrow && styles.handIconGradientCompact]}
                 >
-                  <Ionicons name="keypad-outline" size={26} color={C.white} />
+                  <Ionicons name="keypad-outline" size={isNarrow ? 22 : 26} color={C.white} />
                 </LinearGradient>
                 <View style={styles.cardHeaderText}>
-                  <Text style={styles.welcomeText}>Verify OTP</Text>
-                  <Text style={styles.subtitle}>Code sent to {maskMobile(mobileNumber)}</Text>
+                  <Text style={[styles.welcomeText, isNarrow && styles.welcomeTextCompact]}>Verify OTP</Text>
+                  <Text style={[styles.subtitle, isNarrow && styles.subtitleCompact]} numberOfLines={1}>
+                    Code sent to {maskMobile(mobileNumber)}
+                  </Text>
                 </View>
               </View>
 
               <View style={styles.formSection}>
                 <Text style={styles.inputLabel}>ENTER {OTP_LEN}-DIGIT CODE</Text>
-                <View style={styles.otpRow}>
+                <View style={[styles.otpRow, { gap: otpGap }]}>
                   {Array.from({ length: OTP_LEN }, (_, index) => (
                     <TextInput
                       key={index}
@@ -472,7 +558,7 @@ export default function LoginScreen() {
                       }}
                       style={[
                         styles.otpCell,
-                        { width: OTP_CELL, height: OTP_CELL + 8 },
+                        { flex: 1, maxWidth: 52, fontSize: otpFontSize, aspectRatio: 1 },
                         otp[index] ? styles.otpCellFilled : null,
                       ]}
                       keyboardType="number-pad"
@@ -501,7 +587,9 @@ export default function LoginScreen() {
                       <ActivityIndicator color={C.white} />
                     ) : (
                       <>
-                        <Text style={styles.buttonText}>Verify & Proceed</Text>
+                        <Text style={[styles.buttonText, isNarrow && styles.buttonTextCompact]}>
+                          {isNarrow ? 'Verify' : 'Verify & Proceed'}
+                        </Text>
                         <View style={styles.arrowIconContainer}>
                           <Ionicons name="arrow-forward" size={16} color={C.blue} />
                         </View>
@@ -536,29 +624,29 @@ export default function LoginScreen() {
                   <Text style={styles.changePhoneText}>Change phone number</Text>
                 </TouchableOpacity>
 
-                <View style={[styles.securityContainer, { marginTop: 8 }]}>
+                <View style={[styles.securityContainer, isNarrow && styles.securityContainerCompact, { marginTop: 8 }]}>
                   <View style={styles.badgeColumn}>
-                    <View style={[styles.badgeIconCircle, { backgroundColor: '#E3F2FD' }]}>
-                      <Ionicons name="shield-checkmark" size={18} color={C.blue} />
+                    <View style={[styles.badgeIconCircle, isNarrow && styles.badgeIconCircleCompact, { backgroundColor: '#E3F2FD' }]}>
+                      <Ionicons name="shield-checkmark" size={isNarrow ? 16 : 18} color={C.blue} />
                     </View>
-                    <Text style={styles.badgeTitle}>Secure</Text>
-                    <Text style={styles.badgeSub}>Your data is safe</Text>
+                    <Text style={[styles.badgeTitle, isNarrow && styles.badgeTitleCompact]}>Secure</Text>
+                    {!isNarrow ? <Text style={styles.badgeSub}>Your data is safe</Text> : null}
                   </View>
                   <View style={styles.verticalDivider} />
                   <View style={styles.badgeColumn}>
-                    <View style={[styles.badgeIconCircle, { backgroundColor: '#E8F5E9' }]}>
-                      <Ionicons name="lock-closed" size={18} color={C.green} />
+                    <View style={[styles.badgeIconCircle, isNarrow && styles.badgeIconCircleCompact, { backgroundColor: '#E8F5E9' }]}>
+                      <Ionicons name="lock-closed" size={isNarrow ? 16 : 18} color={C.green} />
                     </View>
-                    <Text style={styles.badgeTitle}>Encrypted</Text>
-                    <Text style={styles.badgeSub}>End-to-end secure</Text>
+                    <Text style={[styles.badgeTitle, isNarrow && styles.badgeTitleCompact]}>Encrypted</Text>
+                    {!isNarrow ? <Text style={styles.badgeSub}>End-to-end secure</Text> : null}
                   </View>
                   <View style={styles.verticalDivider} />
                   <View style={styles.badgeColumn}>
-                    <View style={[styles.badgeIconCircle, { backgroundColor: '#F3E5F5' }]}>
-                      <Ionicons name="shield-half" size={18} color={C.purple} />
+                    <View style={[styles.badgeIconCircle, isNarrow && styles.badgeIconCircleCompact, { backgroundColor: '#F3E5F5' }]}>
+                      <Ionicons name="shield-half" size={isNarrow ? 16 : 18} color={C.purple} />
                     </View>
-                    <Text style={styles.badgeTitle}>Private</Text>
-                    <Text style={styles.badgeSub}>100% confidential</Text>
+                    <Text style={[styles.badgeTitle, isNarrow && styles.badgeTitleCompact]}>Private</Text>
+                    {!isNarrow ? <Text style={styles.badgeSub}>100% confidential</Text> : null}
                   </View>
                 </View>
               </View>
@@ -566,8 +654,14 @@ export default function LoginScreen() {
           )}
         </View>
       </View>
+      </ScrollView>
 
-      <Modal visible={showNameModal} transparent animationType="fade">
+      <Modal
+        visible={showNameModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {}}
+      >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <LinearGradient colors={[C.blue, C.purple]} style={styles.modalIconCircle}>
@@ -607,7 +701,7 @@ export default function LoginScreen() {
           </View>
         </View>
       </Modal>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -616,19 +710,17 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#EEF1F8',
   },
+  scrollContent: {
+    flexGrow: 1,
+    paddingBottom: 24,
+  },
   headerBackground: {
-    minHeight: height * 0.42,
     width: '100%',
     alignItems: 'center',
     position: 'relative',
-    paddingBottom: 28,
   },
   palmSilhouette: {
     position: 'absolute',
-    left: -width * 0.12,
-    top: height * 0.08,
-    width: width * 0.45,
-    height: height * 0.32,
     borderRadius: 999,
     backgroundColor: 'rgba(255,255,255,0.04)',
     transform: [{ rotate: '-18deg' }],
@@ -636,9 +728,6 @@ const styles = StyleSheet.create({
   glowOrbOuter: {
     position: 'absolute',
     right: -20,
-    top: height * 0.12,
-    width: 140,
-    height: 140,
     borderRadius: 70,
     overflow: 'hidden',
   },
@@ -657,22 +746,14 @@ const styles = StyleSheet.create({
     zIndex: 1,
   },
   logoCircle: {
-    width: 132,
-    height: 132,
-    borderRadius: 66,
     backgroundColor: C.white,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 18,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.2,
     shadowRadius: 16,
     elevation: 8,
-  },
-  logoImage: {
-    width: 100,
-    height: 100,
   },
   headerTitle: {
     fontSize: 26,
@@ -681,27 +762,22 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     letterSpacing: 0.2,
   },
+  headerTitleNarrow: {
+    fontSize: 22,
+  },
   gradientTitleWrapper: {
-    height: 44,
     justifyContent: 'center',
     alignItems: 'center',
     marginTop: 2,
     marginBottom: 4,
   },
-  gradientTitleFill: {
-    height: 44,
-    width: width - 40,
-  },
   gradientTitleMask: {
-    fontSize: 30,
     fontWeight: '800',
     textAlign: 'center',
     color: '#000',
-    lineHeight: 40,
     letterSpacing: -0.5,
   },
   gradientTitleWeb: {
-    fontSize: 30,
     fontWeight: '800',
     textAlign: 'center',
     color: C.blue,
@@ -732,10 +808,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
   },
   cardContainer: {
-    flex: 1,
-    marginTop: -56,
-    paddingHorizontal: 20,
-    paddingBottom: 24,
+    flexGrow: 1,
   },
   card: {
     backgroundColor: C.white,
@@ -743,7 +816,6 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 36,
     borderBottomLeftRadius: 28,
     borderBottomRightRadius: 28,
-    paddingHorizontal: 22,
     paddingTop: 20,
     paddingBottom: 28,
     shadowColor: '#050A30',
@@ -769,6 +841,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
     borderRadius: 14,
     backgroundColor: '#F0F2FA',
+    minWidth: 0,
+  },
+  stepPillCompact: {
+    gap: 5,
+    paddingVertical: 8,
+    paddingHorizontal: 4,
   },
   stepPillActive: {
     backgroundColor: '#EDE7F6',
@@ -782,6 +860,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#D1D5E8',
     justifyContent: 'center',
     alignItems: 'center',
+    flexShrink: 0,
+  },
+  stepBadgeCompact: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
   },
   stepBadgeActive: {
     backgroundColor: C.purple,
@@ -798,6 +882,10 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     color: C.mutedBlueGrey,
+    flexShrink: 1,
+  },
+  stepPillLabelCompact: {
+    fontSize: 11,
   },
   stepPillLabelActive: {
     color: C.navy,
@@ -806,6 +894,10 @@ const styles = StyleSheet.create({
     width: 24,
     alignItems: 'center',
     justifyContent: 'center',
+    flexShrink: 0,
+  },
+  stepConnectorCompact: {
+    width: 14,
   },
   stepConnectorLine: {
     height: 2,
@@ -828,12 +920,23 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 14,
+    flexShrink: 0,
+  },
+  handIconGradientCompact: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    marginRight: 10,
   },
   handEmoji: {
     fontSize: 26,
   },
+  handEmojiCompact: {
+    fontSize: 22,
+  },
   cardHeaderText: {
     flex: 1,
+    minWidth: 0,
   },
   welcomeText: {
     fontSize: 22,
@@ -841,11 +944,17 @@ const styles = StyleSheet.create({
     color: C.navy,
     letterSpacing: -0.3,
   },
+  welcomeTextCompact: {
+    fontSize: 19,
+  },
   subtitle: {
     fontSize: 14,
     color: C.mutedBlueGrey,
     marginTop: 4,
     fontWeight: '400',
+  },
+  subtitleCompact: {
+    fontSize: 13,
   },
   formSection: {
     marginTop: 4,
@@ -866,6 +975,11 @@ const styles = StyleSheet.create({
     marginBottom: 22,
     backgroundColor: C.white,
     paddingRight: 12,
+    minWidth: 0,
+  },
+  inputGroupCompact: {
+    marginBottom: 18,
+    paddingRight: 8,
   },
   inputGroupFocused: {
     borderColor: C.purple,
@@ -876,11 +990,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 14,
     gap: 4,
+    flexShrink: 0,
+  },
+  countryPickerCompact: {
+    paddingHorizontal: 10,
   },
   countryCode: {
     fontSize: 16,
     fontWeight: '600',
     color: C.navy,
+  },
+  countryCodeCompact: {
+    fontSize: 15,
   },
   divider: {
     width: 1,
@@ -894,26 +1015,31 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1,
+    minWidth: 0,
     paddingVertical: 15,
     paddingHorizontal: 8,
     fontSize: 16,
     color: C.navy,
   },
+  inputCompact: {
+    paddingVertical: 13,
+    fontSize: 15,
+  },
   otpRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    gap: 8,
     marginBottom: 22,
+    width: '100%',
   },
   otpCell: {
     borderWidth: 1.5,
     borderColor: C.cardBorder,
     borderRadius: 12,
-    fontSize: 22,
     fontWeight: '700',
     color: C.navy,
     textAlign: 'center',
     backgroundColor: '#F8F9FD',
+    minWidth: 0,
   },
   otpCellFilled: {
     borderColor: C.purple,
@@ -940,6 +1066,9 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: C.white,
     letterSpacing: 0.3,
+  },
+  buttonTextCompact: {
+    fontSize: 15,
   },
   arrowIconContainer: {
     width: 30,
@@ -1005,6 +1134,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#ECEFF8',
   },
+  securityContainerCompact: {
+    paddingVertical: 10,
+    paddingHorizontal: 4,
+    marginBottom: 12,
+  },
   badgeColumn: {
     flex: 1,
     alignItems: 'center',
@@ -1018,12 +1152,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 8,
   },
+  badgeIconCircleCompact: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    marginBottom: 4,
+  },
   badgeTitle: {
     fontSize: 12,
     fontWeight: '700',
     color: C.navy,
     marginBottom: 2,
     textAlign: 'center',
+  },
+  badgeTitleCompact: {
+    fontSize: 10,
+    marginBottom: 0,
   },
   badgeSub: {
     fontSize: 9,
@@ -1107,12 +1251,12 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.7)',
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 24,
+    padding: 16,
   },
   modalContent: {
     backgroundColor: '#FFF',
     borderRadius: 28,
-    padding: 28,
+    padding: 24,
     width: '100%',
     maxWidth: 400,
     alignItems: 'center',
