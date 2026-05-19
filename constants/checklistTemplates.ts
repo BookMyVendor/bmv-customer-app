@@ -419,3 +419,59 @@ export const CHECKLIST_TEMPLATES: Record<string, ChecklistTemplate> = {
     ]
   }
 };
+
+function normalizeEventLabel(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+/** Maps API / dropdown event names to a checklist template key. */
+export function resolveChecklistTemplateKey(eventName: string): string | null {
+  if (CHECKLIST_TEMPLATES[eventName]) return eventName;
+
+  const normalized = normalizeEventLabel(eventName);
+  const raw = eventName.toLowerCase();
+
+  const rules: { test: () => boolean; key: string }[] = [
+    { test: () => /wedding/.test(normalized), key: 'Wedding' },
+    { test: () => /birthday/.test(normalized), key: 'Birthday' },
+    {
+      test: () =>
+        /junior/.test(normalized) ||
+        /nanhne|nanne|nahne/.test(normalized) ||
+        (normalized.includes('nanh') && normalized.includes('utsav')),
+      key: 'Junior Journeys / Nanhne Utsav',
+    },
+    {
+      test: () =>
+        /home/.test(normalized) ||
+        /griha/.test(normalized) ||
+        /housewarm/.test(normalized) ||
+        /house warm/.test(normalized),
+      key: 'Home Ceremony',
+    },
+    { test: () => /festival/.test(normalized), key: 'Festivals' },
+    { test: () => /exhibition/.test(normalized), key: 'Exhibition' },
+    { test: () => /corporate/.test(normalized), key: 'Corporate' },
+    { test: () => /personal/.test(normalized) && /milestone/.test(normalized), key: 'Personal Milestones' },
+  ];
+
+  for (const { test, key } of rules) {
+    if (test() && CHECKLIST_TEMPLATES[key]) return key;
+  }
+
+  for (const key of Object.keys(CHECKLIST_TEMPLATES)) {
+    const templateNorm = normalizeEventLabel(key);
+    const templateBase = templateNorm.split('/')[0]?.trim() ?? templateNorm;
+    if (normalized === templateNorm || normalized === templateBase) return key;
+    if (normalized.includes(templateBase) || templateBase.includes(normalized)) return key;
+    if (raw.includes(key.toLowerCase()) || key.toLowerCase().includes(raw)) return key;
+  }
+
+  return null;
+}
+
+export function getChecklistTemplateItems(eventName: string): ChecklistItemInput[] {
+  const key = resolveChecklistTemplateKey(eventName);
+  if (!key) return [];
+  return CHECKLIST_TEMPLATES[key].items.map((item) => ({ ...item }));
+}

@@ -11,7 +11,7 @@ import { getMe } from '@/services/customerService';
 import { listCustomerReviews } from '@/services/reviewService';
 import { searchVendors, VendorResult } from '@/services/vendorSearchService';
 import { useRouter } from 'expo-router';
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, FlatList, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 export default function HomeScreen() {
@@ -200,7 +200,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 16,
-    marginTop: 24,
+    marginTop: 16,
     marginBottom: 16,
   },
   sectionTitle: {
@@ -219,7 +219,7 @@ const styles = StyleSheet.create({
     paddingRight: 8,
   },
   vendorFlatList: {
-    minHeight: 220,
+    minHeight: 210,
   },
   loadingContainer: {
     height: 250,

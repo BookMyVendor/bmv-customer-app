@@ -1,16 +1,16 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Pressable, ActivityIndicator, Alert, Modal } from 'react-native';
-import { Stack, router } from 'expo-router';
-import { Ionicons, MaterialCommunityIcons, FontAwesome5 } from '@expo/vector-icons';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import * as Print from 'expo-print';
-import * as Sharing from 'expo-sharing';
+import { getChecklistTemplateItems } from '@/constants/checklistTemplates';
 import { useAuth } from '@/context/AuthContext';
 import { getCategoryTree } from '@/services/categoryService';
-import { CategoryTreeNode } from '@/types/category.types';
 import { createChecklist, listChecklists, updateChecklistItems } from '@/services/checklistService';
+import { CategoryTreeNode } from '@/types/category.types';
 import { Checklist, ChecklistItem, ChecklistItemInput } from '@/types/checklist.types';
-import { CHECKLIST_TEMPLATES } from '@/constants/checklistTemplates';
+import { FontAwesome5, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import * as Print from 'expo-print';
+import { Stack, router } from 'expo-router';
+import * as Sharing from 'expo-sharing';
+import React, { useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // Helper to get icon for category
 const getCategoryIcon = (title: string) => {
@@ -44,6 +44,21 @@ function compareCategorySortThenName(a: CategoryTreeNode, b: CategoryTreeNode): 
   return (a.name || '').localeCompare(b.name || '');
 }
 
+function getWeddingEventName(events: CategoryTreeNode[]): string {
+  const wedding = events.find((e) => e.name.toLowerCase().includes('wedding'));
+  return wedding?.name ?? 'Wedding';
+}
+
+function sortEventsWithWeddingFirst(events: CategoryTreeNode[]): CategoryTreeNode[] {
+  return [...events].sort((a, b) => {
+    const aWedding = a.name.toLowerCase().includes('wedding');
+    const bWedding = b.name.toLowerCase().includes('wedding');
+    if (aWedding && !bWedding) return -1;
+    if (!aWedding && bWedding) return 1;
+    return compareCategorySortThenName(a, b);
+  });
+}
+
 export default function ChecklistGeneratorScreen() {
   const insets = useSafeAreaInsets();
   const { accessToken } = useAuth();
@@ -57,6 +72,7 @@ export default function ChecklistGeneratorScreen() {
   const [showEventPicker, setShowEventPicker] = useState(false);
   const [showStepPicker, setShowStepPicker] = useState(false);
   const [showStepDetails, setShowStepDetails] = useState(false);
+  const [showAddTaskModal, setShowAddTaskModal] = useState(false);
   const [activeCategory, setActiveCategory] = useState<any>(null);
   const [taskText, setTaskText] = useState('');
   const [selectedStep, setSelectedStep] = useState<string>('');
@@ -67,32 +83,43 @@ export default function ChecklistGeneratorScreen() {
   }, [accessToken]);
 
   const loadData = async () => {
-    if (!accessToken) return;
     try {
       setLoading(true);
-      
-      // 1. Fetch categories (API returns tree roots); list only parent-level event types, not children
+
       const catRes = await getCategoryTree({ category_type: 'event' });
+      let events: CategoryTreeNode[] = [];
       if (catRes.success) {
         const roots = catRes.categories || [];
-        const events = rootEventCategoriesOnly(roots).sort(compareCategorySortThenName);
+        events = sortEventsWithWeddingFirst(rootEventCategoriesOnly(roots));
         setEventTypes(events);
       }
 
-      // 2. Fetch Existing Checklists
-      const checkRes = await listChecklists(accessToken);
-      if (checkRes.success && checkRes.checklists.length > 0) {
-        const existing = checkRes.checklists[0];
-        setChecklist(existing);
-        setSelectedEventType(existing.name);
-        setLocalItems((existing.items || []).map((item: ChecklistItem) => ({
-          task: item.task,
-          category: item.category ?? undefined,
-          priority: item.priority ?? undefined,
-          due_date: item.due_date ?? undefined,
-          is_completed: item.is_completed
-        })));
+      const weddingName = getWeddingEventName(events);
+
+      if (accessToken) {
+        const checkRes = await listChecklists(accessToken);
+        if (checkRes.success && checkRes.checklists.length > 0) {
+          const existing =
+            checkRes.checklists.find((c) => c.name.toLowerCase().includes('wedding')) ?? null;
+
+          if (existing) {
+            setChecklist(existing);
+            setSelectedEventType(existing.name);
+            setLocalItems((existing.items || []).map((item: ChecklistItem) => ({
+              task: item.task,
+              category: item.category ?? undefined,
+              priority: item.priority ?? undefined,
+              due_date: item.due_date ?? undefined,
+              is_completed: item.is_completed,
+            })));
+            return;
+          }
+        }
       }
+
+      setChecklist(null);
+      setSelectedEventType(weddingName);
+      setLocalItems(getChecklistTemplateItems(weddingName));
     } catch (err) {
       console.error('Failed to load checklist data:', err);
     } finally {
@@ -101,13 +128,12 @@ export default function ChecklistGeneratorScreen() {
   };
 
   const handleEventTypeSelect = (event: CategoryTreeNode) => {
-    setSelectedEventType(event.name);
+    const name = event.name;
+    setSelectedEventType(name);
     setShowEventPicker(false);
-    const template = CHECKLIST_TEMPLATES[event.name];
-    if (template) {
-      setLocalItems(template.items);
-    } else {
-      setLocalItems([]);
+    setLocalItems(getChecklistTemplateItems(name));
+    if (checklist && checklist.name !== name) {
+      setChecklist(null);
     }
   };
 
@@ -129,11 +155,14 @@ export default function ChecklistGeneratorScreen() {
           Alert.alert('Success', 'Plan updated successfully!');
         }
       } else {
-        // Create new
-        const res = await createChecklist({
-          name: selectedEventType,
-          items: localItems
-        }, accessToken || '');
+        if (localItems.length === 0) {
+          Alert.alert('No Checklist', `No checklist template found for "${selectedEventType}".`);
+          return;
+        }
+        const res = await createChecklist(
+          { name: selectedEventType, items: localItems },
+          accessToken || ''
+        );
         if (res.success) {
           setChecklist(res.checklist);
           Alert.alert('Success', 'Plan saved successfully!');
@@ -165,7 +194,20 @@ export default function ChecklistGeneratorScreen() {
 
     setLocalItems(prev => [...prev, newItem]);
     setTaskText('');
-    Alert.alert('Added', 'Task added to local list. Don\'t forget to Save Plan!');
+    setShowAddTaskModal(false);
+    Alert.alert('Added', 'Task added. Don\'t forget to Save Plan!');
+  };
+
+  const openAddTaskModal = () => {
+    if (!selectedEventType) {
+      Alert.alert('Select Event', 'Please choose an event type first.');
+      return;
+    }
+    if (categories.length === 0) {
+      Alert.alert('No Checklist', 'Pick an event type that has a checklist template.');
+      return;
+    }
+    setShowAddTaskModal(true);
   };
 
   const handleToggleTask = (task: any) => {
@@ -288,39 +330,17 @@ export default function ChecklistGeneratorScreen() {
             <View style={styles.stepBadge}>
               <Text style={styles.stepBadgeText}>1</Text>
             </View>
-            <Text style={styles.cardTitle}>Choose Event & Setup</Text>
+            <Text style={styles.cardTitle}>Choose Event Type</Text>
           </View>
-          
-          <View style={styles.configRow}>
-            <View style={styles.configField}>
-              <Text style={styles.fieldLabel}>Event Type</Text>
-              <TouchableOpacity style={styles.dropdown} onPress={() => setShowEventPicker(true)}>
-                <View style={styles.dropdownInner}>
-                  <MaterialCommunityIcons name="calendar-star" size={20} color="#F59E0B" />
-                  <Text style={styles.dropdownText}>{selectedEventType || 'Select Event'}</Text>
-                </View>
-                <Ionicons name="chevron-down" size={18} color="#94A3B8" />
-              </TouchableOpacity>
+
+          <Text style={styles.fieldLabel}>Event Type</Text>
+          <TouchableOpacity style={styles.dropdownFull} onPress={() => setShowEventPicker(true)}>
+            <View style={styles.dropdownInner}>
+              <MaterialCommunityIcons name="calendar-star" size={20} color="#F59E0B" />
+              <Text style={styles.dropdownText}>{selectedEventType || 'Select Event'}</Text>
             </View>
-            
-            <View style={styles.configField}>
-              <Text style={styles.fieldLabel}>Initial Setup</Text>
-              <TouchableOpacity 
-                style={[styles.initButton, (!selectedEventType || checklist) && styles.initButtonDisabled]}
-                disabled={!!checklist || !selectedEventType || actionLoading}
-                onPress={handleSavePlan}
-              >
-                {actionLoading && !taskText ? (
-                  <ActivityIndicator color="#003366" size="small" />
-                ) : (
-                  <>
-                    <Ionicons name={checklist ? "checkmark-circle" : "rocket-outline"} size={18} color="#003366" />
-                    <Text style={styles.initButtonText}>{checklist ? 'Ready' : 'Initialize'}</Text>
-                  </>
-                )}
-              </TouchableOpacity>
-            </View>
-          </View>
+            <Ionicons name="chevron-down" size={18} color="#94A3B8" />
+          </TouchableOpacity>
         </View>
 
         {/* Event Picker Modal */}
@@ -476,73 +496,9 @@ export default function ChecklistGeneratorScreen() {
           </View>
         </Modal>
 
-        {/* Add Custom Task */}
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <View style={styles.stepBadge}>
-              <Text style={styles.stepBadgeText}>2</Text>
-            </View>
-            <Text style={styles.cardTitle}>Add To-Do Item</Text>
-          </View>
-          
-          <Text style={styles.fieldLabel}>Assign to Step</Text>
-          <TouchableOpacity style={styles.dropdownFull} onPress={() => setShowStepPicker(true)}>
-            <View style={styles.dropdownInner}>
-              <Ionicons name="layers-outline" size={20} color="#7C3AED" />
-              <Text style={styles.dropdownText}>{selectedStep || 'Select Step'}</Text>
-            </View>
-            <Ionicons name="chevron-down" size={18} color="#94A3B8" />
-          </TouchableOpacity>
-
-          <Text style={styles.fieldLabel}>Priority</Text>
-          <View style={styles.priorityRow}>
-            {['low', 'medium', 'high'].map((p) => (
-              <TouchableOpacity 
-                key={p} 
-                style={[styles.priorityChip, priority === p && { backgroundColor: p === 'high' ? '#EF4444' : p === 'medium' ? '#F59E0B' : '#10B981', borderColor: 'transparent' }]}
-                onPress={() => setPriority(p)}
-              >
-                <Text style={[styles.priorityChipText, priority === p && { color: '#FFF' }]}>{p.toUpperCase()}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-          
-          <View style={styles.textareaContainer}>
-            <TextInput
-              style={styles.textarea}
-              placeholder="What needs to be done?"
-              placeholderTextColor="#94A3B8"
-              multiline
-              value={taskText}
-              onChangeText={setTaskText}
-              maxLength={200}
-            />
-            <Text style={styles.charCount}>{taskText.length}/200</Text>
-          </View>
-          
-          <TouchableOpacity 
-            style={[styles.addTaskButton, (!taskText || !selectedStep || actionLoading) && { opacity: 0.7 }]} 
-            onPress={handleAddTask}
-            disabled={!taskText || !selectedStep || actionLoading}
-          >
-            {actionLoading && taskText ? (
-              <ActivityIndicator color="#FFF" size="small" />
-            ) : (
-              <>
-                <Ionicons name="add-circle-outline" size={24} color="#FFF" />
-                <Text style={styles.addTaskButtonText}>Add Task</Text>
-              </>
-            )}
-          </TouchableOpacity>
-        </View>
-
         {/* Categories Header */}
         <View style={styles.categoriesHeader}>
           <Text style={styles.categoriesTitle}>Your Checklist Categories</Text>
-          <TouchableOpacity style={styles.reorderBtn}>
-            <Ionicons name="swap-vertical" size={16} color="#003366" />
-            <Text style={styles.reorderText}>Reorder</Text>
-          </TouchableOpacity>
         </View>
 
         {/* Category Cards */}
@@ -582,11 +538,87 @@ export default function ChecklistGeneratorScreen() {
         ) : (
           <View style={styles.emptyState}>
             <Ionicons name="list-outline" size={48} color="#CBD5E1" />
-            <Text style={styles.emptyText}>Initialize your checklist to see steps here</Text>
+            <Text style={styles.emptyText}>Select an event type to load your checklist</Text>
           </View>
         )}
 
       </ScrollView>
+
+      <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, 12) }]}>
+        <TouchableOpacity style={styles.addCustomTaskBtn} onPress={openAddTaskModal} activeOpacity={0.85}>
+          <Ionicons name="add-circle-outline" size={22} color="#003366" />
+          <Text style={styles.addCustomTaskBtnText}>Add Custom Task</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Add Custom Task Modal */}
+      <Modal visible={showAddTaskModal} transparent animationType="slide">
+        <Pressable style={styles.modalOverlay} onPress={() => setShowAddTaskModal(false)} />
+        <View style={styles.addTaskModalContent}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Add Custom Task</Text>
+            <TouchableOpacity onPress={() => setShowAddTaskModal(false)}>
+              <Ionicons name="close" size={24} color="#666" />
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView
+            style={styles.addTaskModalScroll}
+            contentContainerStyle={{ padding: 20, paddingBottom: 24 + insets.bottom }}
+            keyboardShouldPersistTaps="handled"
+          >
+            <Text style={styles.fieldLabel}>Assign to Step</Text>
+            <TouchableOpacity style={styles.dropdownFull} onPress={() => setShowStepPicker(true)}>
+              <View style={styles.dropdownInner}>
+                <Ionicons name="layers-outline" size={20} color="#7C3AED" />
+                <Text style={styles.dropdownText}>{selectedStep || 'Select Step'}</Text>
+              </View>
+              <Ionicons name="chevron-down" size={18} color="#94A3B8" />
+            </TouchableOpacity>
+
+            <Text style={styles.fieldLabel}>Priority</Text>
+            <View style={styles.priorityRow}>
+              {['low', 'medium', 'high'].map((p) => (
+                <TouchableOpacity
+                  key={p}
+                  style={[styles.priorityChip, priority === p && { backgroundColor: p === 'high' ? '#EF4444' : p === 'medium' ? '#F59E0B' : '#10B981', borderColor: 'transparent' }]}
+                  onPress={() => setPriority(p)}
+                >
+                  <Text style={[styles.priorityChipText, priority === p && { color: '#FFF' }]}>{p.toUpperCase()}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <View style={styles.textareaContainer}>
+              <TextInput
+                style={styles.textarea}
+                placeholder="What needs to be done?"
+                placeholderTextColor="#94A3B8"
+                multiline
+                value={taskText}
+                onChangeText={setTaskText}
+                maxLength={200}
+              />
+              <Text style={styles.charCount}>{taskText.length}/200</Text>
+            </View>
+
+            <TouchableOpacity
+              style={[styles.addTaskButton, (!taskText || !selectedStep || actionLoading) && { opacity: 0.7 }]}
+              onPress={handleAddTask}
+              disabled={!taskText || !selectedStep || actionLoading}
+            >
+              {actionLoading && taskText ? (
+                <ActivityIndicator color="#FFF" size="small" />
+              ) : (
+                <>
+                  <Ionicons name="add-circle-outline" size={24} color="#FFF" />
+                  <Text style={styles.addTaskButtonText}>Add Task</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </ScrollView>
+        </View>
+      </Modal>
 
     </View>
   );
@@ -637,7 +669,40 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: 16,
-    paddingBottom: 40,
+    paddingBottom: 100,
+  },
+  bottomBar: {
+    backgroundColor: '#FFF',
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+    paddingHorizontal: 16,
+    paddingTop: 12,
+  },
+  addCustomTaskBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#F0F7FF',
+    borderWidth: 1.5,
+    borderColor: '#003366',
+    borderRadius: 12,
+    paddingVertical: 14,
+  },
+  addCustomTaskBtnText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#003366',
+  },
+  addTaskModalContent: {
+    backgroundColor: '#FFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: '85%',
+    marginTop: 'auto',
+  },
+  addTaskModalScroll: {
+    maxHeight: 500,
   },
   card: {
     backgroundColor: '#FFF',
@@ -821,6 +886,47 @@ const styles = StyleSheet.create({
   },
   categoryInfo: {
     flex: 1,
+  },
+  categoryTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#001F3F',
+    marginBottom: 2,
+  },
+  categorySubtitle: {
+    fontSize: 12,
+    color: '#64748B',
+    marginBottom: 8,
+  },
+  progressBarContainer: {
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#F1F5F9',
+    overflow: 'hidden',
+  },
+  progressBar: {
+    height: '100%',
+    borderRadius: 3,
+  },
+  categoryRight: {
+    alignItems: 'flex-end',
+    gap: 8,
+    marginLeft: 8,
+  },
+  percentageBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  percentageText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  emptyText: {
+    fontSize: 14,
+    color: '#94A3B8',
+    textAlign: 'center',
+    marginTop: 12,
   },
   initButton: {
     flexDirection: 'row',

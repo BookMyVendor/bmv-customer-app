@@ -1,27 +1,27 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import { useAuth } from '@/context/AuthContext';
+import { Ionicons } from '@expo/vector-icons';
+import MaskedView from '@react-native-masked-view/masked-view';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  View,
-  Text,
+  ActivityIndicator,
+  Alert,
+  Image,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  ScrollView,
+  StatusBar,
   StyleSheet,
+  Text,
   TextInput,
   TouchableOpacity,
-  Platform,
-  Alert,
-  ActivityIndicator,
-  Image,
-  StatusBar,
-  Modal,
-  ScrollView,
-  KeyboardAvoidingView,
   useWindowDimensions,
+  View,
 } from 'react-native';
-import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
-import MaskedView from '@react-native-masked-view/masked-view';
 import { sendOtp } from '../services/authService';
-import { useAuth } from '@/context/AuthContext';
 
 const C = {
   navy: '#050A30',
@@ -394,22 +394,13 @@ export default function LoginScreen() {
 
           {step === 1 ? (
             <>
-              <View style={styles.cardHeader}>
-                <LinearGradient
-                  colors={[C.blue, C.purple]}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={[styles.handIconGradient, isNarrow && styles.handIconGradientCompact]}
-                >
-                  <Text style={[styles.handEmoji, isNarrow && styles.handEmojiCompact]}>👋</Text>
-                </LinearGradient>
+              {/* <View style={styles.cardHeader}>
+                
                 <View style={styles.cardHeaderText}>
                   <Text style={[styles.welcomeText, isNarrow && styles.welcomeTextCompact]}>Welcome Back!</Text>
-                  <Text style={[styles.subtitle, isNarrow && styles.subtitleCompact]} numberOfLines={2}>
-                    Enter your mobile number to get started
-                  </Text>
+                 
                 </View>
-              </View>
+              </View> */}
 
               <View style={styles.formSection}>
                 <Text style={styles.inputLabel}>MOBILE NUMBER</Text>
@@ -508,37 +499,11 @@ export default function LoginScreen() {
                   </Text>
                 </TouchableOpacity>
                 ) : null}
-
-                {!isNarrow ? (
-                <>
-                <View style={styles.helpDividerWrap}>
-                  <View style={styles.helpDividerLine} />
-                  <Ionicons name="star" size={10} color="#C5CAE9" />
-                  <View style={styles.helpDividerLine} />
-                </View>
-
-                <TouchableOpacity style={styles.helpButton} activeOpacity={0.7}>
-                  <View style={styles.helpIconCircle}>
-                    <Ionicons name="headset-outline" size={20} color={C.purple} />
-                  </View>
-                  <Text style={styles.helpText}>Need help with your account?</Text>
-                  <Ionicons name="chevron-forward" size={18} color={C.purple} />
-                </TouchableOpacity>
-                </>
-                ) : null}
               </View>
             </>
           ) : (
             <>
               <View style={styles.cardHeader}>
-                <LinearGradient
-                  colors={[C.blue, C.purple]}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={[styles.handIconGradient, isNarrow && styles.handIconGradientCompact]}
-                >
-                  <Ionicons name="keypad-outline" size={isNarrow ? 22 : 26} color={C.white} />
-                </LinearGradient>
                 <View style={styles.cardHeaderText}>
                   <Text style={[styles.welcomeText, isNarrow && styles.welcomeTextCompact]}>Verify OTP</Text>
                   <Text style={[styles.subtitle, isNarrow && styles.subtitleCompact]} numberOfLines={1}>
@@ -712,7 +677,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     flexGrow: 1,
-    paddingBottom: 24,
+    paddingBottom: 8,
   },
   headerBackground: {
     width: '100%',
@@ -817,7 +782,7 @@ const styles = StyleSheet.create({
     borderBottomLeftRadius: 28,
     borderBottomRightRadius: 28,
     paddingTop: 20,
-    paddingBottom: 28,
+    paddingBottom: 16,
     shadowColor: '#050A30',
     shadowOffset: { width: 0, height: 12 },
     shadowOpacity: 0.12,
@@ -913,27 +878,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 22,
   },
-  handIconGradient: {
-    width: 56,
-    height: 56,
-    borderRadius: 14,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 14,
-    flexShrink: 0,
-  },
-  handIconGradientCompact: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
-    marginRight: 10,
-  },
-  handEmoji: {
-    fontSize: 26,
-  },
-  handEmojiCompact: {
-    fontSize: 22,
-  },
+
   cardHeaderText: {
     flex: 1,
     minWidth: 0,
@@ -1130,7 +1075,7 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     paddingHorizontal: 8,
     borderRadius: 16,
-    marginBottom: 20,
+    marginBottom: 14,
     borderWidth: 1,
     borderColor: '#ECEFF8',
   },
@@ -1187,7 +1132,7 @@ const styles = StyleSheet.create({
   termsRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    marginBottom: 22,
+    marginBottom: 0,
     gap: 10,
   },
   checkbox: {

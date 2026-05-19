@@ -7,7 +7,7 @@ import { useAuth } from '@/context/AuthContext';
 import { saveVendor, unsaveVendor, isVendorSaved } from '@/services/savedVendorService';
 
 const { width } = Dimensions.get('window');
-const CARD_WIDTH = (width - 80) / 3;
+const CARD_WIDTH = Math.min(Math.max(width * 0.48, 165), 230);
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://49.248.202.218:5000/';
 
 function getMediaUrl(url: string | null): string | null {
@@ -151,7 +151,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   imageContainer: {
-    height: 180,
+    height: 128,
     width: '100%',
     position: 'relative',
   },
@@ -189,10 +189,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   content: {
-    paddingTop: 12,
+    paddingTop: 10,
   },
   title: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700',
     color: '#1A1A1A',
     marginBottom: 4,
@@ -204,7 +204,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   locationText: {
-    fontSize: 13,
+    fontSize: 12,
     color: '#666',
   },
   footer: {
