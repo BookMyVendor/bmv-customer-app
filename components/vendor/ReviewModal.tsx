@@ -91,11 +91,7 @@ export default function ReviewModal({
       // If editing, remove the old review first so the backend's
       // submit endpoint (which always inserts) doesn't create a duplicate.
       if (initialReview?.id) {
-        try {
-          await deleteReview({ review_id: initialReview.id }, accessToken);
-        } catch (e) {
-          console.warn('[REVIEW] Failed to delete old review before update:', e);
-        }
+        await deleteReview({ review_id: initialReview.id }, accessToken);
       }
 
       const requestData: SubmitCustomerReviewRequest = {

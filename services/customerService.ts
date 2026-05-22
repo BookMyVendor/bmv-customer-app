@@ -7,7 +7,15 @@ import {
   CustomerMeUpdateRequest,
   CustomerMeUpdateResponse,
 } from '@/types/customer.types';
+import { assertCustomerIsActive } from '@/utils/customerActive';
 import { apiPost } from './apiClient';
+
+/** Returns customer profile by phone; throws if account exists but is deactivated. */
+export async function getActiveCustomerByPhone(phone: string): Promise<CustomerByPhoneResponse> {
+  const response = await getCustomerByPhone(phone);
+  assertCustomerIsActive(response.customer);
+  return response;
+}
 
 export async function getCustomerByPhone(
   phone: string

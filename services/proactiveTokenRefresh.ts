@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { ACCESS_TOKEN_EXPIRES_AT_KEY } from '@/constants/authStorage';
+import { ACCESS_TOKEN_EXPIRES_AT_KEY, REFRESH_TOKEN_KEY } from '@/constants/authStorage';
 import { PROACTIVE_REFRESH_BUFFER_SEC } from '@/constants/tokenRefresh';
+import { ensureAccessTokenFreshBeforeRequest } from '@/services/apiClient';
 
 const MAX_SET_TIMEOUT_MS = 2147483647;
 
@@ -21,13 +22,13 @@ export function clearProactiveRefreshSchedule(): void {
 
 async function runProactiveRefresh(): Promise<void> {
   timeoutHandle = null;
-  if (!refreshHandler || proactiveRunInFlight) {
+  if (proactiveRunInFlight) {
     await rescheduleProactiveTokenRefresh();
     return;
   }
   proactiveRunInFlight = true;
   try {
-    await refreshHandler();
+    await ensureAccessTokenFreshBeforeRequest();
   } catch {
     // Session cleared on failure inside refresh / api layer
   } finally {
@@ -43,7 +44,8 @@ export async function rescheduleProactiveTokenRefresh(): Promise<void> {
   clearProactiveRefreshSchedule();
 
   const expiresAtStr = await AsyncStorage.getItem(ACCESS_TOKEN_EXPIRES_AT_KEY);
-  if (!expiresAtStr || !refreshHandler) {
+  const hasRefresh = !!(await AsyncStorage.getItem(REFRESH_TOKEN_KEY));
+  if (!expiresAtStr || !hasRefresh) {
     return;
   }
 
@@ -74,26 +76,23 @@ export async function rescheduleProactiveTokenRefresh(): Promise<void> {
  * When the app returns to foreground, refresh if we're already inside the buffer window.
  */
 export async function refreshIfAccessTokenInBufferWindow(): Promise<void> {
-  const expiresAtStr = await AsyncStorage.getItem(ACCESS_TOKEN_EXPIRES_AT_KEY);
-  if (!expiresAtStr || !refreshHandler) {
+  const refreshToken = await AsyncStorage.getItem(REFRESH_TOKEN_KEY);
+  if (!refreshToken) {
     return;
   }
-  const expiresAt = Number(expiresAtStr);
-  if (!Number.isFinite(expiresAt)) {
+
+  if (proactiveRunInFlight) {
+    await rescheduleProactiveTokenRefresh();
     return;
   }
-  const bufferMs = Math.max(30_000, PROACTIVE_REFRESH_BUFFER_SEC * 1000);
-  if (Date.now() >= expiresAt - bufferMs) {
-    if (!proactiveRunInFlight) {
-      proactiveRunInFlight = true;
-      try {
-        await refreshHandler();
-      } catch {
-        // cleared elsewhere
-      } finally {
-        proactiveRunInFlight = false;
-      }
-    }
+
+  proactiveRunInFlight = true;
+  try {
+    await ensureAccessTokenFreshBeforeRequest();
+  } catch {
+    // Session cleared in apiClient refresh path
+  } finally {
+    proactiveRunInFlight = false;
   }
   await rescheduleProactiveTokenRefresh();
 }

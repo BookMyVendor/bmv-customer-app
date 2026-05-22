@@ -11,12 +11,16 @@ import {
   RefreshTokenResponse,
 } from '@/types/auth.types';
 import { sendOtp, verifyOtp, resendOtp, signOut } from '@/services/authService';
-import { getCustomerByPhone, updateMe } from '@/services/customerService';
+import { getActiveCustomerByPhone, getCustomerByPhone, updateMe } from '@/services/customerService';
+import {
+  INACTIVE_CUSTOMER_MESSAGE,
+  inactiveAccountError,
+  isInactiveAccountError,
+} from '@/utils/customerActive';
 import {
   ACCESS_TOKEN_KEY,
   REFRESH_TOKEN_KEY,
   USER_KEY,
-  ACCESS_TOKEN_EXPIRES_AT_KEY,
   NEEDS_PROFILE_SETUP_KEY,
   clearAuthStorage,
   persistSessionTokens,
@@ -79,7 +83,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const sub = AppState.addEventListener('change', (state) => {
-      if (state === 'active') {
+      if (state === 'active' || state === 'background' || state === 'inactive') {
         void refreshIfAccessTokenInBufferWindow();
       }
     });
@@ -99,25 +103,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!authState.isAuthenticated || authState.isLoading) {
       return;
     }
-    let cancelled = false;
-    (async () => {
-      const exp = await AsyncStorage.getItem(ACCESS_TOKEN_EXPIRES_AT_KEY);
-      if (exp || cancelled) {
-        return;
-      }
-      try {
-        await refreshSessionTokens();
-      } catch {
-        // Invalid / rotated refresh without stored expiry — session cleared in client
-      } finally {
-        if (!cancelled) {
-          await rescheduleProactiveTokenRefresh();
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
+    void refreshIfAccessTokenInBufferWindow();
   }, [authState.isAuthenticated, authState.isLoading]);
 
   useEffect(() => {
@@ -141,6 +127,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (accessToken && refreshToken && userStr) {
         const user = JSON.parse(userStr);
+
+        if (user?.phone) {
+          try {
+            await getActiveCustomerByPhone(user.phone);
+          } catch (activeCheckError) {
+            if (isInactiveAccountError(activeCheckError)) {
+              await clearAuthStorage();
+              setAuthState({
+                isAuthenticated: false,
+                needsProfileSetup: false,
+                user: null,
+                accessToken: null,
+                refreshToken: null,
+                isLoading: false,
+                error: INACTIVE_CUSTOMER_MESSAGE,
+              });
+              return;
+            }
+            console.warn('[AUTH] Active status check skipped on restore:', activeCheckError);
+          }
+        }
+
         setAuthState({
           isAuthenticated: true,
           needsProfileSetup: needsProfileSetupStr === '1',
@@ -150,6 +158,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           isLoading: false,
           error: null,
         });
+        void refreshIfAccessTokenInBufferWindow();
       } else {
         setAuthState({
           isAuthenticated: false,
@@ -180,13 +189,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   ): Promise<SendOtpResponse> => {
     setAuthState((prev) => ({ ...prev, isLoading: true, error: null }));
     try {
+      try {
+        await getActiveCustomerByPhone(phone);
+      } catch (activeCheckError) {
+        if (isInactiveAccountError(activeCheckError)) {
+          throw inactiveAccountError();
+        }
+      }
+
       const response = await sendOtp(phone, deviceInfo);
       setAuthState((prev) => ({ ...prev, isLoading: false }));
       return response;
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to send OTP';
+      const inactive = isInactiveAccountError(error);
+      const errorMessage = inactive
+        ? INACTIVE_CUSTOMER_MESSAGE
+        : error instanceof Error
+          ? error.message
+          : 'Failed to send OTP';
       setAuthState((prev) => ({ ...prev, isLoading: false, error: errorMessage }));
-      throw error;
+      throw inactive ? inactiveAccountError() : error;
     }
   };
 
@@ -198,12 +220,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   ): Promise<VerifyOtpResult> => {
     setAuthState((prev) => ({ ...prev, isLoading: true, error: null }));
     try {
+      try {
+        await getActiveCustomerByPhone(phone);
+      } catch (activeCheckError) {
+        if (isInactiveAccountError(activeCheckError)) {
+          throw inactiveAccountError();
+        }
+      }
+
       const response = await verifyOtp(phone, otp, deviceInfo);
 
       let customerResponse: Awaited<ReturnType<typeof getCustomerByPhone>> | null = null;
       try {
-        customerResponse = await getCustomerByPhone(phone);
+        customerResponse = await getActiveCustomerByPhone(phone);
       } catch (customerError) {
+        if (isInactiveAccountError(customerError)) {
+          throw inactiveAccountError();
+        }
         console.warn('[AUTH] customers-by-phone failed after OTP verify:', customerError);
       }
 
@@ -218,8 +251,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           pincode: null,
         } as any, response.accessToken);
         try {
-          customerResponse = await getCustomerByPhone(phone);
+          customerResponse = await getActiveCustomerByPhone(phone);
         } catch (customerError) {
+          if (isInactiveAccountError(customerError)) {
+            throw inactiveAccountError();
+          }
           console.warn('[AUTH] customers-by-phone re-fetch failed:', customerError);
         }
       }
@@ -263,9 +299,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       return { ...response, needsProfileSetup };
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to verify OTP';
+      const inactive = isInactiveAccountError(error);
+      const errorMessage = inactive
+        ? INACTIVE_CUSTOMER_MESSAGE
+        : error instanceof Error
+          ? error.message
+          : 'Failed to verify OTP';
       setAuthState((prev) => ({ ...prev, isLoading: false, error: errorMessage }));
-      throw error;
+      throw inactive ? inactiveAccountError() : error;
     }
   };
 
@@ -276,9 +317,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setAuthState((prev) => ({ ...prev, isLoading: false }));
       return response;
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to resend OTP';
+      const inactive = isInactiveAccountError(error);
+      const errorMessage = inactive
+        ? INACTIVE_CUSTOMER_MESSAGE
+        : error instanceof Error
+          ? error.message
+          : 'Failed to resend OTP';
       setAuthState((prev) => ({ ...prev, isLoading: false, error: errorMessage }));
-      throw error;
+      throw inactive ? inactiveAccountError() : error;
     }
   };
 
@@ -316,14 +362,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       try {
         const result = await refreshSessionTokens();
-        if (!options?.silent) {
-          setAuthState((prev) => ({
-            ...prev,
-            isLoading: false,
-            accessToken: result.accessToken,
-            refreshToken: result.refreshToken,
-          }));
-        }
+        setAuthState((prev) => ({
+          ...prev,
+          isLoading: options?.silent ? prev.isLoading : false,
+          accessToken: result.accessToken,
+          refreshToken: result.refreshToken,
+        }));
+        await rescheduleProactiveTokenRefresh();
         return result;
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Failed to refresh token';
@@ -367,7 +412,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       let customerName = fullName.trim();
       try {
-        const updatedCustomer = await getCustomerByPhone(authState.user.phone);
+        const updatedCustomer = await getActiveCustomerByPhone(authState.user.phone);
         customerName = updatedCustomer.customer?.name?.trim() || customerName;
       } catch (customerError) {
         console.warn('[AUTH] customers-by-phone failed after name update:', customerError);

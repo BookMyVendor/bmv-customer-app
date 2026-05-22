@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -11,7 +11,7 @@ import {
   Linking,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
+import { useLocalSearchParams, useRouter, Stack, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -22,6 +22,7 @@ import { listBusinessReviews, listCustomerReviews } from '@/services/reviewServi
 import { Review } from '@/types/review.types';
 import ReviewModal from '../../components/vendor/ReviewModal';
 import QuoteModal from '../../components/vendor/QuoteModal';
+import { resolveVendorReviewDisplay, starFillCount } from '@/utils/reviewStats';
 
 const { width } = Dimensions.get('window');
 const HERO_HEIGHT = 340;
@@ -40,11 +41,6 @@ function formatRating(rating: number | string | null | undefined): string {
   const numRating = typeof rating === 'string' ? parseFloat(rating) : rating;
   if (typeof numRating !== 'number' || isNaN(numRating)) return '—';
   return numRating.toFixed(1);
-}
-
-function starFillCount(rating: number | null | undefined): number {
-  if (rating == null || isNaN(rating)) return 0;
-  return Math.min(5, Math.round(rating));
 }
 
 /** Same file / path after resolving API base — avoids cover appearing again in gallery */
@@ -137,10 +133,10 @@ export default function VendorDetailScreen() {
   const [isQuoteModalVisible, setIsQuoteModalVisible] = useState(false);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (options?: { silent?: boolean }) => {
     if (!id) return;
     try {
-      setLoading(true);
+      if (!options?.silent) setLoading(true);
       const promises: Promise<any>[] = [
         searchVendors({ mode: 'filter', filters: { businessIds: [id] } }),
         getBusinessPricing(id),
@@ -170,7 +166,7 @@ export default function VendorDetailScreen() {
     } catch (error) {
       console.error('Failed to fetch vendor data:', error);
     } finally {
-      setLoading(false);
+      if (!options?.silent) setLoading(false);
     }
   }, [id, accessToken]);
 
@@ -181,6 +177,17 @@ export default function VendorDetailScreen() {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  const isFirstFocus = useRef(true);
+  useFocusEffect(
+    useCallback(() => {
+      if (isFirstFocus.current) {
+        isFirstFocus.current = false;
+        return;
+      }
+      fetchData({ silent: true });
+    }, [fetchData])
+  );
 
   const handleOpenSocial = (url: string | null | undefined) => {
     if (url) {
@@ -225,9 +232,13 @@ export default function VendorDetailScreen() {
   });
   const featuredReview = reviewsFromOthers[0] ?? null;
 
-  const ratingNum =
-    vendor.calculated_rating != null ? Number(vendor.calculated_rating) : NaN;
-  const reviewCount = vendor.review_count ?? 0;
+  const { rating: displayRating, count: reviewCount } = resolveVendorReviewDisplay(
+    reviews,
+    userReview,
+    vendor.calculated_rating,
+    vendor.review_count
+  );
+  const filledStars = starFillCount(displayRating);
 
   const socialLinks: { key: string; url: string | null | undefined; icon: keyof typeof Ionicons.glyphMap; color: string }[] = [
     { key: 'web', url: vendor.website_url, icon: 'globe-outline', color: '#0EA5E9' },
@@ -353,7 +364,7 @@ export default function VendorDetailScreen() {
           <View style={styles.statsRow}>
             <View style={styles.statTile}>
               <Ionicons name="star" size={16} color="#F59E0B" />
-              <Text style={styles.statValue}>{formatRating(vendor.calculated_rating)}</Text>
+              <Text style={styles.statValue}>{formatRating(displayRating)}</Text>
               <Text style={styles.statLabel}>Rating</Text>
             </View>
             <View style={styles.statDivider} />
@@ -463,18 +474,20 @@ export default function VendorDetailScreen() {
           </View>
 
           <LinearGradient colors={['#F8FAFC', '#EEF2FF']} style={styles.ratingHero}>
-            <Text style={styles.ratingHeroNum}>{formatRating(vendor.calculated_rating)}</Text>
+            <Text style={styles.ratingHeroNum}>{formatRating(displayRating)}</Text>
             <View style={styles.ratingHeroStars}>
               {[1, 2, 3, 4, 5].map((s) => (
                 <Ionicons
                   key={s}
-                  name={s <= starFillCount(ratingNum) ? 'star' : 'star-outline'}
+                  name={s <= filledStars ? 'star' : 'star-outline'}
                   size={18}
-                  color={s <= starFillCount(ratingNum) ? '#F59E0B' : '#CBD5E1'}
+                  color={s <= filledStars ? '#F59E0B' : '#CBD5E1'}
                 />
               ))}
             </View>
-            <Text style={styles.ratingHeroSub}>Based on {reviewCount} verified review{reviewCount === 1 ? '' : 's'}</Text>
+            <Text style={styles.ratingHeroSub}>
+              Based on {reviewCount} review{reviewCount === 1 ? '' : 's'}
+            </Text>
           </LinearGradient>
 
           {userReview && (
@@ -550,7 +563,7 @@ export default function VendorDetailScreen() {
         vendorId={vendor.vendor_id}
         accessToken={accessToken}
         authUser={user}
-        onSuccess={fetchData}
+        onSuccess={() => fetchData({ silent: true })}
         initialReview={userReview}
       />
 

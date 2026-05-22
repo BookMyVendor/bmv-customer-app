@@ -100,7 +100,6 @@ export function LocationProvider({ children }: { children: ReactNode }) {
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
-        setState((prev) => ({ ...prev, isLoading: false }));
         return;
       }
 
@@ -111,6 +110,8 @@ export function LocationProvider({ children }: { children: ReactNode }) {
       );
       await setCity(nearestCity);
     } catch {
+      // location unavailable — user can pick a city manually
+    } finally {
       setState((prev) => ({ ...prev, isLoading: false }));
     }
   };

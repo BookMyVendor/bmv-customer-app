@@ -11,6 +11,7 @@ import {
   CheckMobileExistsResponse,
   ApiError,
 } from '@/types/auth.types';
+import { resolveAuthError } from '@/utils/customerActive';
 import { apiPost } from './apiClient';
 
 export async function sendOtp(
@@ -26,9 +27,8 @@ export async function sendOtp(
     console.log('[AUTH SERVICE] OTP sent successfully:', response);
     return response;
   } catch (error) {
-    const apiError = error as ApiError;
-    console.error('[AUTH SERVICE] Failed to send OTP:', apiError);
-    throw new Error(apiError.error || 'Failed to send OTP');
+    console.error('[AUTH SERVICE] Failed to send OTP:', error);
+    throw resolveAuthError(error, 'Failed to send OTP');
   }
 }
 
@@ -46,9 +46,8 @@ export async function verifyOtp(
     console.log('[AUTH SERVICE] OTP verified successfully:', response);
     return response;
   } catch (error) {
-    const apiError = error as ApiError;
-    console.error('[AUTH SERVICE] Failed to verify OTP:', apiError);
-    throw new Error(apiError.error || 'Failed to verify OTP');
+    console.error('[AUTH SERVICE] Failed to verify OTP:', error);
+    throw resolveAuthError(error, 'Failed to verify OTP');
   }
 }
 
@@ -80,9 +79,8 @@ export async function resendOtp(phone: string): Promise<ResendOtpResponse> {
     console.log('[AUTH SERVICE] OTP resent successfully:', response);
     return response;
   } catch (error) {
-    const apiError = error as ApiError;
-    console.error('[AUTH SERVICE] Failed to resend OTP:', apiError);
-    throw new Error(apiError.error || 'Failed to resend OTP');
+    console.error('[AUTH SERVICE] Failed to resend OTP:', error);
+    throw resolveAuthError(error, 'Failed to resend OTP');
   }
 }
 

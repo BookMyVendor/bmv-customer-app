@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import { View, StyleSheet, ScrollView, RefreshControl } from 'react-native';
+import { useFocusEffect } from 'expo-router';
 import { HomeHeader } from '@/components/home/HomeHeader';
 import { ProfileHeader } from '@/components/profile/ProfileHeader';
 import { ProfileMenu } from '@/components/profile/ProfileMenu';
@@ -64,9 +65,11 @@ export default function ProfileScreen() {
     await loadStats(cust);
   }, [loadCustomerData, loadStats]);
 
-  useEffect(() => {
-    reloadAll();
-  }, [reloadAll]);
+  useFocusEffect(
+    useCallback(() => {
+      reloadAll();
+    }, [reloadAll])
+  );
 
   const handleEdit = () => setIsEditModalVisible(true);
 

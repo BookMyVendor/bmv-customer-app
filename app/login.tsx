@@ -21,7 +21,11 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { sendOtp } from '../services/authService';
+import {
+  INACTIVE_ACCOUNT_ALERT_TITLE,
+  INACTIVE_CUSTOMER_MESSAGE,
+  isInactiveAccountError,
+} from '@/utils/customerActive';
 
 const C = {
   navy: '#050A30',
@@ -92,7 +96,14 @@ export default function LoginScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
-  const { verifyOtp, resendOtp, updateProfileName, needsProfileSetup } = useAuth();
+  const { sendOtp, verifyOtp, resendOtp, updateProfileName, needsProfileSetup, error, clearError } =
+    useAuth();
+
+  useEffect(() => {
+    if (!error || !isInactiveAccountError(error)) return;
+    Alert.alert(INACTIVE_ACCOUNT_ALERT_TITLE, INACTIVE_CUSTOMER_MESSAGE);
+    clearError();
+  }, [error, clearError]);
 
   const isNarrow = windowWidth < NARROW_WIDTH;
   const isShort = windowHeight < SHORT_HEIGHT;
@@ -174,10 +185,13 @@ export default function LoginScreen() {
       await sendOtp(phoneNumber);
       goToVerifyStep();
     } catch (error) {
-      console.error('[LOGIN] Send OTP failed, dummy flow');
+      if (isInactiveAccountError(error)) {
+        Alert.alert(INACTIVE_ACCOUNT_ALERT_TITLE, INACTIVE_CUSTOMER_MESSAGE);
+        return;
+      }
       const errorMessage = error instanceof Error ? error.message : 'Failed to send OTP';
-      Alert.alert('API Error', `${errorMessage}. You can still enter the test OTP if enabled.`);
-      goToVerifyStep();
+      console.error('[LOGIN] Send OTP failed:', error);
+      Alert.alert('Could not send OTP', errorMessage);
     } finally {
       setIsSendingOtp(false);
     }
@@ -202,6 +216,10 @@ export default function LoginScreen() {
       }
     } catch (error) {
       console.error('[LOGIN] Verify failed:', error);
+      if (isInactiveAccountError(error)) {
+        Alert.alert(INACTIVE_ACCOUNT_ALERT_TITLE, INACTIVE_CUSTOMER_MESSAGE);
+        return;
+      }
       const errorMessage = error instanceof Error ? error.message : 'Failed to verify OTP';
       Alert.alert('Verification Failed', errorMessage);
     } finally {
@@ -241,8 +259,13 @@ export default function LoginScreen() {
       await resendOtp(phoneNumber);
       setCountdown(45);
       Alert.alert('OTP Resent', 'A new OTP has been sent to your mobile number');
-    } catch {
-      setCountdown(45);
+    } catch (error) {
+      if (isInactiveAccountError(error)) {
+        Alert.alert(INACTIVE_ACCOUNT_ALERT_TITLE, INACTIVE_CUSTOMER_MESSAGE);
+        return;
+      }
+      const errorMessage = error instanceof Error ? error.message : 'Failed to resend OTP';
+      Alert.alert('Could not resend OTP', errorMessage);
     } finally {
       setIsResending(false);
     }

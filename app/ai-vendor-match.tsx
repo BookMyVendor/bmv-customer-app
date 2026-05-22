@@ -3,7 +3,7 @@ import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Stack, router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Dimensions,
   ScrollView,
@@ -199,52 +199,15 @@ export default function AIVendorMatchScreen() {
     }, [isSelecting])
   );
 
-  useEffect(() => {
-    fetchCategories();
-  }, []);
-
-  useEffect(() => {
-    if (selectedCategory) {
-      setSelectedVendors([]); // Clear previous selections when category changes to ensure same-category comparison
-      handleSearch();
-    } else {
-      setSearchResults([]);
-    }
-  }, [selectedCategory]);
-
-  useEffect(() => {
-    if (selectedCategory) {
-      handleSearch();
-    }
-  }, [sortBy]);
-
-  useEffect(() => {
-    if (!isSelecting && selectedVendors.length > 0) {
-      fetchPricingForSelected();
-    }
-  }, [isSelecting, selectedVendors]);
-
-  const fetchCategories = async () => {
-    try {
-      const response = await getCategoryTree();
-      if (response.success) {
-        // Fetch all categories with type 'business' as requested
-        const businessCats = response.categories.filter(c => c.category_type === 'business');
-        setCategories(businessCats);
-      }
-    } catch (err) {
-      console.error('Failed to fetch categories:', err);
-    }
-  };
-
-  const handleSearch = async () => {
+  const handleSearch = useCallback(async () => {
+    if (!selectedCategory) return;
     try {
       setLoading(true);
       const response = await searchVendors({
         mode: 'filter',
         filters: {
-          serviceType: selectedCategory ? [selectedCategory] : undefined,
-          vendorName: searchQuery || undefined,
+          serviceType: [selectedCategory],
+          vendorName: searchQuery.trim() || undefined,
         },
         sortBy: sortBy === 'name' ? 'updated_at' : sortBy === 'reviews' ? 'rating' : sortBy,
         sortOrder: sortBy === 'price' ? 'asc' : 'desc',
@@ -263,6 +226,61 @@ export default function AIVendorMatchScreen() {
       console.error('Search failed:', err);
     } finally {
       setLoading(false);
+    }
+  }, [selectedCategory, searchQuery, sortBy]);
+
+  const filteredCategories = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return categories;
+    return categories.filter(c => c.name.toLowerCase().includes(q));
+  }, [categories, searchQuery]);
+
+  const selectCategory = useCallback((name: string) => {
+    setSelectedCategory(name);
+    setSearchQuery('');
+  }, []);
+
+  useEffect(() => {
+    fetchCategories();
+  }, []);
+
+  useEffect(() => {
+    if (selectedCategory) {
+      setSelectedVendors([]); // Clear previous selections when category changes to ensure same-category comparison
+      handleSearch();
+    } else {
+      setSearchResults([]);
+    }
+  }, [selectedCategory, handleSearch]);
+
+  useEffect(() => {
+    if (!selectedCategory) return;
+    const timer = setTimeout(() => handleSearch(), 400);
+    return () => clearTimeout(timer);
+  }, [searchQuery, selectedCategory, handleSearch]);
+
+  useEffect(() => {
+    if (selectedCategory) {
+      handleSearch();
+    }
+  }, [sortBy, selectedCategory, handleSearch]);
+
+  useEffect(() => {
+    if (!isSelecting && selectedVendors.length > 0) {
+      fetchPricingForSelected();
+    }
+  }, [isSelecting, selectedVendors]);
+
+  const fetchCategories = async () => {
+    try {
+      const response = await getCategoryTree();
+      if (response.success) {
+        // Fetch all categories with type 'business' as requested
+        const businessCats = response.categories.filter(c => c.category_type === 'business');
+        setCategories(businessCats);
+      }
+    } catch (err) {
+      console.error('Failed to fetch categories:', err);
     }
   };
 
@@ -341,11 +359,14 @@ export default function AIVendorMatchScreen() {
               <Ionicons name="search" size={20} color="#94A3B8" />
               <TextInput
                 style={styles.selectionSearchInput}
-                placeholder={`Search in ${selectedCategory || 'category'}…`}
+                placeholder={selectedCategory ? `Search vendors in ${selectedCategory}…` : 'Search service categories…'}
                 placeholderTextColor="#94A3B8"
                 value={searchQuery}
                 onChangeText={setSearchQuery}
-                onSubmitEditing={handleSearch}
+                onSubmitEditing={() => {
+                  if (selectedCategory) handleSearch();
+                }}
+                returnKeyType="search"
               />
             </View>
             <TouchableOpacity
@@ -415,15 +436,43 @@ export default function AIVendorMatchScreen() {
         </View>
 
         {!selectedCategory ? (
-          <View style={styles.selectionBodyFill}>
-            <View style={styles.promptCard}>
-              <LinearGradient colors={['#6366F1', '#7C3AED']} style={styles.promptIconRing}>
-                <MaterialCommunityIcons name="gesture-tap-hold" size={36} color="#fff" />
-              </LinearGradient>
-              <Text style={styles.promptTitleModern}>Start with a category</Text>
-              <Text style={styles.promptTextModern}>Pick the kind of service you need. We will list vendors you can add to your comparison.</Text>
+          searchQuery.trim() ? (
+            <FlatList
+              style={styles.selectionFlatList}
+              data={filteredCategories}
+              keyExtractor={item => item.id}
+              contentContainerStyle={styles.selectionList}
+              keyboardShouldPersistTaps="handled"
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={styles.pickerItemModern}
+                  onPress={() => selectCategory(item.name)}
+                >
+                  <Text style={styles.pickerItemTextModern}>{item.name}</Text>
+                  <Ionicons name="chevron-forward" size={20} color="#94A3B8" />
+                </TouchableOpacity>
+              )}
+              ListEmptyComponent={
+                <View style={styles.emptyModern}>
+                  <MaterialCommunityIcons name="shape-outline" size={48} color="#CBD5E1" />
+                  <Text style={styles.emptyModernTitle}>No categories found</Text>
+                  <Text style={styles.emptyModernSub}>Try a different name or pick from the service list below.</Text>
+                </View>
+              }
+            />
+          ) : (
+            <View style={styles.selectionBodyFill}>
+              <View style={styles.promptCard}>
+                <LinearGradient colors={['#6366F1', '#7C3AED']} style={styles.promptIconRing}>
+                  <MaterialCommunityIcons name="gesture-tap-hold" size={36} color="#fff" />
+                </LinearGradient>
+                <Text style={styles.promptTitleModern}>Start with a category</Text>
+                <Text style={styles.promptTextModern}>
+                  Search for a service type above, or tap Service type below. Then pick vendors to compare.
+                </Text>
+              </View>
             </View>
-          </View>
+          )
         ) : loading ? (
           <View style={styles.selectionBodyFill}>
             <ActivityIndicator size="large" color="#6366F1" />
@@ -519,7 +568,7 @@ export default function AIVendorMatchScreen() {
                 <TouchableOpacity
                   style={[styles.pickerItemModern, selectedCategory === item.name && styles.pickerItemModernActive]}
                   onPress={() => {
-                    setSelectedCategory(item.name);
+                    selectCategory(item.name);
                     setShowServicePicker(false);
                     setServiceSearch('');
                   }}

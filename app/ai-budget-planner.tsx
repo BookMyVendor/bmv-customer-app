@@ -5,8 +5,7 @@ import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, Activi
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
-import { Asset } from 'expo-asset';
-import * as FileSystem from 'expo-file-system';
+import { buildPdfDocumentHtml, loadPdfLogoBase64 } from '@/utils/pdfExport';
 import { useAuth } from '@/context/AuthContext';
 import { getWeddingBudgetPlanCategories, createWeddingBudgetPlan, listWeddingBudgetPlans } from '@/services/weddingBudgetService';
 import { WeddingBudgetPlanCategory, WeddingBudgetPlanCategoryInput } from '@/types/weddingBudget.types';
@@ -48,6 +47,64 @@ const getColorForCategory = (index: number) => {
   const colors = ['#4F46E5', '#0EA5E9', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#F97316'];
   return colors[index % colors.length];
 };
+
+function parseBudgetNumber(value: string | number | undefined | null): number {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+  if (value == null) return 0;
+  return parseFloat(String(value).replace(/[^0-9.]/g, '')) || 0;
+}
+
+function getLatestPlan(plans: { updated_at?: string; created_at?: string }[]) {
+  if (!plans.length) return null;
+  return [...plans].sort((a, b) => {
+    const aTime = new Date(a.updated_at || a.created_at || 0).getTime();
+    const bTime = new Date(b.updated_at || b.created_at || 0).getTime();
+    return bTime - aTime;
+  })[0];
+}
+
+/** Normalize API rows and rebuild missing amounts from percentages (or vice versa). */
+function hydrateBudgetCategories(
+  rawCategories: WeddingBudgetPlanCategory[],
+  totalBudget: number
+): WeddingBudgetPlanCategory[] {
+  return rawCategories.map((cat, idx) => {
+    let amount = parseBudgetNumber(cat.amount);
+    let percentage =
+      cat.percentage != null && Number.isFinite(Number(cat.percentage))
+        ? Number(cat.percentage)
+        : totalBudget > 0
+          ? (amount / totalBudget) * 100
+          : 0;
+
+    if (amount === 0 && percentage > 0 && totalBudget > 0) {
+      amount = Math.round((percentage / 100) * totalBudget);
+    } else if (percentage === 0 && amount > 0 && totalBudget > 0) {
+      percentage = (amount / totalBudget) * 100;
+    }
+
+    return {
+      ...cat,
+      amount,
+      percentage,
+      display_order: cat.display_order ?? idx + 1,
+    };
+  });
+}
+
+function recalcDefaultCategoryAmounts(
+  cats: WeddingBudgetPlanCategory[],
+  totalBudget: number
+): WeddingBudgetPlanCategory[] {
+  return cats.map((cat) => {
+    if (cat.is_custom) return cat;
+    const pct = cat.percentage || 0;
+    return {
+      ...cat,
+      amount: Math.round((pct / 100) * totalBudget),
+    };
+  });
+}
 
 const BudgetItem = ({ item, index, isGlobalEditMode, onAmountChange, onNameChange, onDelete }: { item: WeddingBudgetPlanCategory, index: number, isGlobalEditMode: boolean, onAmountChange: (id: string, amount: string) => void, onNameChange: (id: string, name: string) => void, onDelete: (id: string) => void }) => {
   const color = getColorForCategory(index);
@@ -105,6 +162,7 @@ export default function AIBudgetPlannerScreen() {
   const insets = useSafeAreaInsets();
   const { accessToken } = useAuth();
   const [budget, setBudget] = useState('500000');
+  const [planId, setPlanId] = useState<string | null>(null);
   const [categories, setCategories] = useState<WeddingBudgetPlanCategory[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -117,7 +175,35 @@ export default function AIBudgetPlannerScreen() {
 
   useEffect(() => {
     checkExistingPlan();
-  }, []);
+  }, [accessToken]);
+
+  const applyPlanToState = async (
+    plan: { id: string; total_budget?: number; categories?: WeddingBudgetPlanCategory[] },
+    fallbackCategories?: WeddingBudgetPlanCategory[]
+  ) => {
+    const totalBudget = parseBudgetNumber(plan.total_budget ?? budget);
+    setPlanId(plan.id);
+    setBudget(totalBudget > 0 ? String(Math.round(totalBudget)) : budget);
+
+    let planCategories = plan.categories || [];
+    if (planCategories.length === 0 && accessToken) {
+      const catResponse = await getWeddingBudgetPlanCategories({ plan_id: plan.id }, accessToken);
+      if (catResponse.success) {
+        planCategories = catResponse.categories;
+      }
+    }
+
+    if (planCategories.length === 0 && fallbackCategories?.length) {
+      planCategories = fallbackCategories;
+    }
+
+    if (planCategories.length > 0) {
+      const hydrated = hydrateBudgetCategories(planCategories, totalBudget);
+      setCategories(recalcDefaultCategoryAmounts(hydrated, totalBudget));
+    } else {
+      await fetchDefaultCategories(totalBudget);
+    }
+  };
 
   const checkExistingPlan = async () => {
     if (!accessToken) return;
@@ -125,28 +211,14 @@ export default function AIBudgetPlannerScreen() {
       setLoading(true);
       const response = await listWeddingBudgetPlans(accessToken);
       if (response.success && response.plans && response.plans.length > 0) {
-        const plan = response.plans[0];
-        const totalBudget = plan.total_budget || 0;
-        setBudget(totalBudget.toString());
-        
-        // If the plan has categories, use them
-        let planCategories = plan.categories || [];
-        if (planCategories.length === 0) {
-          const catResponse = await getWeddingBudgetPlanCategories({ plan_id: plan.id }, accessToken);
-          if (catResponse.success) {
-            planCategories = catResponse.categories;
-          }
+        const plan = getLatestPlan(response.plans) as (typeof response.plans)[0];
+        if (plan) {
+          await applyPlanToState(plan);
+        } else {
+          await fetchDefaultCategories();
         }
-
-        // Ensure all categories have a percentage for dynamic allocation
-        const processedCategories = planCategories.map(cat => ({
-          ...cat,
-          percentage: cat.percentage || (totalBudget > 0 ? (cat.amount / totalBudget) * 100 : 0)
-        }));
-        
-        setCategories(processedCategories);
       } else {
-        // No existing plan, fetch default categories
+        setPlanId(null);
         await fetchDefaultCategories();
       }
     } catch (err) {
@@ -157,37 +229,28 @@ export default function AIBudgetPlannerScreen() {
     }
   };
 
-  const fetchDefaultCategories = async () => {
-    // If we have default categories provided by API, use them, otherwise use our hardcoded list
-    const totalBudget = parseFloat(budget.replace(/[^0-9]/g, '')) || 0;
-    
+  const fetchDefaultCategories = async (totalBudgetOverride?: number) => {
+    const totalBudget =
+      totalBudgetOverride ?? (parseBudgetNumber(budget) || 500000);
+
     const initialized = DEFAULT_CATEGORIES.map((cat, idx) => ({
       id: `def-${idx}`,
-      plan_id: '',
+      plan_id: planId || '',
       category_name: cat.name,
       amount: Math.round((cat.percentage / 100) * totalBudget),
       is_custom: false,
       display_order: idx + 1,
-      percentage: cat.percentage
+      percentage: cat.percentage,
     }));
     setCategories(initialized);
   };
 
   const handleBudgetChange = (val: string) => {
     const cleanVal = val.replace(/[^0-9]/g, '');
-    setBudget(cleanVal); // Store raw digits
-    
+    setBudget(cleanVal);
+
     const totalBudget = parseFloat(cleanVal) || 0;
-    
-    // Recalculate all non-custom amounts based on percentages
-    setCategories(prev => prev.map(cat => {
-      if (cat.is_custom) return cat; 
-      const pct = cat.percentage || 0;
-      return {
-        ...cat,
-        amount: Math.round((pct / 100) * totalBudget)
-      };
-    }));
+    setCategories((prev) => recalcDefaultCategoryAmounts(prev, totalBudget));
   };
 
   const getFormattedBudget = (val: string) => {
@@ -197,19 +260,21 @@ export default function AIBudgetPlannerScreen() {
   };
 
   const handleAmountChange = (id: string, amountStr: string) => {
-    const amount = parseFloat(amountStr.replace(/[^0-9]/g, '')) || 0;
-    const totalBudget = parseFloat(budget) || 0;
-    
-    setCategories(prev => prev.map(cat => {
-      if (cat.id === id) {
-        return {
-          ...cat,
-          amount,
-          percentage: totalBudget > 0 ? (amount / totalBudget) * 100 : 0
-        };
-      }
-      return cat;
-    }));
+    const amount = parseBudgetNumber(amountStr);
+    const totalBudget = parseBudgetNumber(budget);
+
+    setCategories((prev) =>
+      prev.map((cat) => {
+        if (cat.id === id) {
+          return {
+            ...cat,
+            amount,
+            percentage: totalBudget > 0 ? (amount / totalBudget) * 100 : 0,
+          };
+        }
+        return cat;
+      })
+    );
   };
 
   const handleNameChange = (id: string, name: string) => {
@@ -248,8 +313,8 @@ export default function AIBudgetPlannerScreen() {
       return;
     }
     
-    const amount = parseFloat(customAmount.replace(/[^0-9]/g, '')) || 0;
-    const totalBudget = parseFloat(budget.replace(/,/g, '')) || 0;
+    const amount = parseBudgetNumber(customAmount);
+    const totalBudget = parseBudgetNumber(budget);
     
     const newCategory: WeddingBudgetPlanCategory = {
       id: Math.random().toString(36).substr(2, 9), // Temporary ID
@@ -271,25 +336,29 @@ export default function AIBudgetPlannerScreen() {
     if (!accessToken) return;
     try {
       setSaving(true);
-      const totalBudget = parseFloat(budget.replace(/,/g, '')) || 0;
-      
-      const categoryInputs: WeddingBudgetPlanCategoryInput[] = categories.map(c => ({
+      const totalBudget = parseBudgetNumber(budget);
+
+      const categoryInputs: WeddingBudgetPlanCategoryInput[] = categories.map((c, idx) => ({
         category_name: c.category_name,
-        amount: c.amount,
+        amount: parseBudgetNumber(c.amount),
         is_custom: c.is_custom,
-        display_order: c.display_order,
-        percentage: c.percentage
+        display_order: c.display_order ?? idx + 1,
+        percentage: c.percentage ?? 0,
       }));
 
-      const response = await createWeddingBudgetPlan({
-        name: `Wedding Plan - ${new Date().toLocaleDateString()}`,
-        total_budget: totalBudget,
-        categories: categoryInputs
-      }, accessToken);
+      const response = await createWeddingBudgetPlan(
+        {
+          name: `Wedding Plan - ${new Date().toLocaleDateString()}`,
+          total_budget: totalBudget,
+          ...(planId ? { plan_id: planId, id: planId } : {}),
+          categories: categoryInputs,
+        },
+        accessToken
+      );
 
-      if (response.success) {
+      if (response.success && response.plan) {
+        await applyPlanToState(response.plan, categories);
         Alert.alert('Success', 'Budget plan saved successfully!');
-        await checkExistingPlan(); // Refresh data from backend after save
       }
     } catch (err: any) {
       Alert.alert('Error', err.message || 'Failed to save plan');
@@ -299,8 +368,11 @@ export default function AIBudgetPlannerScreen() {
   };
 
   const totals = useMemo(() => {
-    const totalBudget = parseFloat(budget) || 0;
-    const allocated = categories.reduce((sum, cat) => sum + (parseFloat(cat.amount?.toString() || '0')), 0);
+    const totalBudget = parseBudgetNumber(budget);
+    const allocated = categories.reduce(
+      (sum, cat) => sum + parseBudgetNumber(cat.amount),
+      0
+    );
     const balance = totalBudget - allocated;
     const allocatedPct = totalBudget > 0 ? (allocated / totalBudget) * 100 : 0;
     
@@ -326,28 +398,15 @@ export default function AIBudgetPlannerScreen() {
         return;
       }
 
-      // Load local logo and convert to base64
-      let logoBase64 = '';
-      try {
-        const asset = Asset.fromModule(require('../assets/images/bmv_internal_logo.png'));
-        await asset.downloadAsync();
-        logoBase64 = await FileSystem.readAsStringAsync(asset.localUri || '', {
-          encoding: 'base64',
-        });
-      } catch (err) {
-        console.warn('Could not load local logo:', err);
-      }
+      const logoBase64 = await loadPdfLogoBase64();
 
-      const html = `
-        <html>
-          <head>
-            <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no" />
-            <style>
-              body { font-family: 'Helvetica', 'Arial', sans-serif; padding: 20px; color: #1a1a1a; }
-              .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 30px; }
+      const html = buildPdfDocumentHtml({
+        title: 'Budget Plan',
+        logoBase64,
+        styles: `
+              .header { margin-bottom: 30px; }
               .header-info h1 { font-size: 28px; margin: 0; color: #003366; }
               .header-info p { font-size: 12px; color: #666; margin-top: 5px; }
-              .logo { width: 100px; height: auto; }
               
               .summary-card { background: #f8f9fb; border-radius: 12px; padding: 20px; margin-bottom: 30px; }
               .summary-title { font-size: 16px; font-weight: bold; margin-bottom: 15px; }
@@ -371,15 +430,13 @@ export default function AIBudgetPlannerScreen() {
               .custom-title { font-size: 16px; font-weight: bold; color: #EC4899; margin-top: 30px; margin-bottom: 15px; }
               
               .footer { text-align: center; font-size: 10px; color: #999; margin-top: 40px; border-top: 1px solid #eee; padding-top: 10px; }
-            </style>
-          </head>
-          <body>
+            `,
+        body: `
             <div class="header">
               <div class="header-info">
                 <h1>Budget Plan</h1>
                 <p>Generated: ${new Date().toLocaleDateString('en-GB')}</p>
               </div>
-              ${logoBase64 ? `<img src="data:image/png;base64,${logoBase64}" class="logo" />` : ''}
             </div>
 
             <div class="summary-card">
@@ -437,12 +494,15 @@ export default function AIBudgetPlannerScreen() {
             <div class="footer">
               <p>BookMyVendors - Your Personalized Budget Plan</p>
             </div>
-          </body>
-        </html>
-      `;
+        `,
+      });
 
       console.log('Generating PDF file...');
-      const { uri } = await Print.printToFileAsync({ html });
+      const { uri } = await Print.printToFileAsync({
+        html,
+        width: 595,
+        height: 842,
+      });
       console.log('PDF generated at:', uri);
       
       await Sharing.shareAsync(uri, { 

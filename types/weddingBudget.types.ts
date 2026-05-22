@@ -41,6 +41,9 @@ export interface WeddingBudgetPlanCategoryInput {
 export interface WeddingBudgetPlansCreateRequest {
   name?: string;
   total_budget?: number;
+  /** When set, updates an existing plan instead of creating a duplicate */
+  plan_id?: string;
+  id?: string;
   categories?: WeddingBudgetPlanCategoryInput[];
 }
 

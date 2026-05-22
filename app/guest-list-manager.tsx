@@ -15,6 +15,41 @@ const EVENT_NAME = 'My Event';
 
 const CATEGORIES = ['Family', 'Friends', 'Colleague', 'Others'];
 const RSVP_OPTIONS = ['Pending', 'Attending', 'Not Attending'];
+const PHONE_MAX_LENGTH = 10;
+const INDIAN_MOBILE_REGEX = /^[6-9]\d{9}$/;
+
+function digitsOnly(value: string): string {
+  return value.replace(/\D/g, '');
+}
+
+function normalizeIndianMobileDigits(raw: string): string {
+  let d = digitsOnly(raw);
+  if (d.length > 10 && d.startsWith('91')) d = d.slice(2);
+  if (d.length === 11 && d.startsWith('0')) d = d.slice(1);
+  return d.slice(0, PHONE_MAX_LENGTH);
+}
+
+function getPhoneValidationError(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  const digits = normalizeIndianMobileDigits(trimmed);
+  if (digits.length !== PHONE_MAX_LENGTH) {
+    return `Phone number must be ${PHONE_MAX_LENGTH} digits`;
+  }
+  if (!INDIAN_MOBILE_REGEX.test(digits)) {
+    return 'Enter a valid mobile number (starts with 6–9)';
+  }
+  return null;
+}
+
+function getEmailValidationError(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i.test(trimmed)) {
+    return 'Enter a valid email address';
+  }
+  return null;
+}
 
 /** API expects: pending | attending | not-attending */
 function rsvpStatusForApi(uiLabel: string): string {
@@ -135,6 +170,8 @@ export default function GuestListManagerScreen() {
   const [category, setCategory] = useState('Friends');
   const [rsvpStatus, setRsvpStatus] = useState('Pending');
   const [dietary, setDietary] = useState('');
+  const [phoneError, setPhoneError] = useState('');
+  const [emailError, setEmailError] = useState('');
 
   // Filters
   const [selectedCategory, setSelectedCategory] = useState('All');
@@ -183,17 +220,26 @@ export default function GuestListManagerScreen() {
   };
 
   const handleAddOrUpdateGuest = async () => {
+    const nextPhoneError = getPhoneValidationError(phone);
+    const nextEmailError = getEmailValidationError(email);
+    setPhoneError(nextPhoneError || '');
+    setEmailError(nextEmailError || '');
+
     if (!name.trim()) {
       Alert.alert('Error', 'Please enter a name');
       return;
     }
+    if (nextPhoneError || nextEmailError) return;
+
+    const phoneDigits = phone.trim() ? normalizeIndianMobileDigits(phone) : undefined;
+
     setActionLoading(true);
     try {
       if (editingGuest) {
         await updateGuest({
           guest_id: editingGuest.id,
           name: name.trim(),
-          phone: phone.trim() || undefined,
+          phone: phoneDigits,
           email: email.trim() || undefined,
           category,
           rsvp_status: rsvpStatusForApi(rsvpStatus),
@@ -204,7 +250,7 @@ export default function GuestListManagerScreen() {
           list_id: guestListId,
           id: guestListId, // Alias for compatibility
           name: name.trim(),
-          phone: phone.trim() || undefined,
+          phone: phoneDigits,
           email: email.trim() || undefined,
           category,
           rsvp_status: rsvpStatusForApi(rsvpStatus),
@@ -242,8 +288,10 @@ export default function GuestListManagerScreen() {
   const handleEditGuest = (guest: Guest) => {
     setEditingGuest(guest);
     setName(guest.name);
-    setPhone(guest.phone || '');
+    setPhone(guest.phone ? normalizeIndianMobileDigits(guest.phone) : '');
     setEmail(guest.email || '');
+    setPhoneError('');
+    setEmailError('');
     setCategory(guest.category || 'Friends');
     setRsvpStatus(rsvpStatusFromApi(guest.rsvp_status));
     setDietary(guest.dietary_restrictions || '');
@@ -313,6 +361,19 @@ export default function GuestListManagerScreen() {
     setCategory('Friends');
     setRsvpStatus('Pending');
     setDietary('');
+    setPhoneError('');
+    setEmailError('');
+  };
+
+  const handlePhoneChange = (text: string) => {
+    const digits = normalizeIndianMobileDigits(text);
+    setPhone(digits);
+    if (phoneError) setPhoneError(getPhoneValidationError(digits) || '');
+  };
+
+  const handleEmailChange = (text: string) => {
+    setEmail(text);
+    if (emailError) setEmailError(getEmailValidationError(text) || '');
   };
 
   const filteredGuests = guests.filter(g => {
@@ -348,8 +409,11 @@ export default function GuestListManagerScreen() {
 
   const selectContact = (contact: any) => {
     setName(contact.name || '');
-    setPhone(contact.phoneNumbers?.[0]?.number || '');
+    const importedPhone = contact.phoneNumbers?.[0]?.number || '';
+    setPhone(importedPhone ? normalizeIndianMobileDigits(importedPhone) : '');
     setEmail(contact.emails?.[0]?.email || '');
+    setPhoneError(getPhoneValidationError(importedPhone) || '');
+    setEmailError(getEmailValidationError(contact.emails?.[0]?.email || '') || '');
     setShowContactsModal(false);
     setContactSearch('');
   };
@@ -489,7 +553,10 @@ export default function GuestListManagerScreen() {
 
         <TouchableOpacity
           style={[styles.fabOuter, { bottom: 24 + insets.bottom, right: 20 }]}
-          onPress={() => setModalVisible(true)}
+          onPress={() => {
+            resetForm();
+            setModalVisible(true);
+          }}
           activeOpacity={0.92}
         >
           <LinearGradient colors={['#6366F1', '#7C3AED']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.fab}>
@@ -544,24 +611,32 @@ export default function GuestListManagerScreen() {
                     <Text style={styles.importLink}>Import from Contacts</Text>
                   </TouchableOpacity>
                 </View>
+                <Text style={styles.fieldHint}>10-digit Indian mobile (optional)</Text>
                 <TextInput
-                  placeholder="e.g. +91 9876543210"
-                  style={styles.fieldInput}
+                  placeholder="e.g. 9876543210"
+                  style={[styles.fieldInput, phoneError ? styles.fieldInputError : null]}
                   value={phone}
-                  onChangeText={setPhone}
+                  onChangeText={handlePhoneChange}
+                  onBlur={() => setPhoneError(getPhoneValidationError(phone) || '')}
                   keyboardType="phone-pad"
+                  maxLength={PHONE_MAX_LENGTH}
                   placeholderTextColor="#BBB"
                 />
+                {phoneError ? <Text style={styles.fieldError}>{phoneError}</Text> : null}
 
                 <Text style={styles.fieldLabel}>EMAIL ADDRESS (OPTIONAL)</Text>
                 <TextInput
                   placeholder="e.g. john@example.com"
-                  style={styles.fieldInput}
+                  style={[styles.fieldInput, emailError ? styles.fieldInputError : null]}
                   value={email}
-                  onChangeText={setEmail}
+                  onChangeText={handleEmailChange}
+                  onBlur={() => setEmailError(getEmailValidationError(email) || '')}
                   keyboardType="email-address"
+                  autoCapitalize="none"
+                  autoCorrect={false}
                   placeholderTextColor="#BBB"
                 />
+                {emailError ? <Text style={styles.fieldError}>{emailError}</Text> : null}
 
                 {/* Category */}
                 <Text style={styles.fieldLabel}>CATEGORY</Text>
@@ -1131,8 +1206,14 @@ const styles = StyleSheet.create({
   contactName: { fontSize: 15, fontWeight: '700', color: '#1A1A1A' },
   contactPhone: { fontSize: 13, color: '#555', marginTop: 2 },
   contactEmail: { fontSize: 12, color: '#888', marginTop: 1 },
+  fieldHint: { fontSize: 11, color: '#94A3B8', marginBottom: 6, marginTop: -4 },
+  fieldError: { fontSize: 12, color: '#DC2626', marginTop: 6, fontWeight: '600' },
   fieldInput: {
     borderWidth: 1, borderColor: '#eee', borderRadius: 12, padding: 14, fontSize: 15, color: '#333',
+  },
+  fieldInputError: {
+    borderColor: '#FCA5A5',
+    backgroundColor: '#FEF2F2',
   },
   dropdownContainer: { marginBottom: 0 },
   dropdown: {

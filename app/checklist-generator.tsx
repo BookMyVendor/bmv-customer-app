@@ -5,10 +5,12 @@ import { createChecklist, listChecklists, updateChecklistItems } from '@/service
 import { CategoryTreeNode } from '@/types/category.types';
 import { Checklist, ChecklistItem, ChecklistItemInput } from '@/types/checklist.types';
 import { FontAwesome5, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Print from 'expo-print';
-import { Stack, router } from 'expo-router';
+import { Stack, router, useFocusEffect } from 'expo-router';
 import * as Sharing from 'expo-sharing';
-import React, { useEffect, useMemo, useState } from 'react';
+import { buildChecklistPdfHtml, loadPdfLogoBase64 } from '@/utils/pdfExport';
+import React, { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -59,14 +61,40 @@ function sortEventsWithWeddingFirst(events: CategoryTreeNode[]): CategoryTreeNod
   });
 }
 
+const LAST_CHECKLIST_ID_KEY = '@bmv_last_checklist_id';
+
+function toLocalItems(items: ChecklistItem[] = []): ChecklistItemInput[] {
+  return items.map((item) => ({
+    task: item.task,
+    category: item.category ?? undefined,
+    priority: item.priority ?? undefined,
+    due_date: item.due_date ?? undefined,
+    is_completed: item.is_completed,
+  }));
+}
+
+function findChecklistByName(checklists: Checklist[], name: string): Checklist | null {
+  const normalized = name.trim().toLowerCase();
+  return checklists.find((c) => c.name.trim().toLowerCase() === normalized) ?? null;
+}
+
+async function persistLastChecklistId(id: string) {
+  try {
+    await AsyncStorage.setItem(LAST_CHECKLIST_ID_KEY, id);
+  } catch {
+    // ignore storage errors
+  }
+}
+
 export default function ChecklistGeneratorScreen() {
   const insets = useSafeAreaInsets();
-  const { accessToken } = useAuth();
+  const { accessToken, user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [eventTypes, setEventTypes] = useState<CategoryTreeNode[]>([]);
   const [selectedEventType, setSelectedEventType] = useState<string>('');
   const [checklist, setChecklist] = useState<Checklist | null>(null);
+  const [savedChecklists, setSavedChecklists] = useState<Checklist[]>([]);
   const [localItems, setLocalItems] = useState<ChecklistItemInput[]>([]);
   
   const [showEventPicker, setShowEventPicker] = useState(false);
@@ -78,11 +106,13 @@ export default function ChecklistGeneratorScreen() {
   const [selectedStep, setSelectedStep] = useState<string>('');
   const [priority, setPriority] = useState<string>('medium');
 
-  useEffect(() => {
-    loadData();
-  }, [accessToken]);
+  const applyChecklist = useCallback((existing: Checklist) => {
+    setChecklist(existing);
+    setSelectedEventType(existing.name);
+    setLocalItems(toLocalItems(existing.items || []));
+  }, []);
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     try {
       setLoading(true);
 
@@ -99,21 +129,29 @@ export default function ChecklistGeneratorScreen() {
       if (accessToken) {
         const checkRes = await listChecklists(accessToken);
         if (checkRes.success && checkRes.checklists.length > 0) {
-          const existing =
-            checkRes.checklists.find((c) => c.name.toLowerCase().includes('wedding')) ?? null;
+          const allChecklists = checkRes.checklists;
+          setSavedChecklists(allChecklists);
+
+          let existing: Checklist | null = null;
+          try {
+            const lastId = await AsyncStorage.getItem(LAST_CHECKLIST_ID_KEY);
+            if (lastId) {
+              existing = allChecklists.find((c) => c.id === lastId) ?? null;
+            }
+          } catch {
+            // ignore storage read errors
+          }
+
+          if (!existing) {
+            existing = allChecklists[allChecklists.length - 1] ?? null;
+          }
 
           if (existing) {
-            setChecklist(existing);
-            setSelectedEventType(existing.name);
-            setLocalItems((existing.items || []).map((item: ChecklistItem) => ({
-              task: item.task,
-              category: item.category ?? undefined,
-              priority: item.priority ?? undefined,
-              due_date: item.due_date ?? undefined,
-              is_completed: item.is_completed,
-            })));
+            applyChecklist(existing);
             return;
           }
+        } else {
+          setSavedChecklists([]);
         }
       }
 
@@ -125,16 +163,28 @@ export default function ChecklistGeneratorScreen() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [accessToken, applyChecklist]);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadData();
+    }, [loadData])
+  );
 
   const handleEventTypeSelect = (event: CategoryTreeNode) => {
     const name = event.name;
     setSelectedEventType(name);
     setShowEventPicker(false);
-    setLocalItems(getChecklistTemplateItems(name));
-    if (checklist && checklist.name !== name) {
-      setChecklist(null);
+
+    const existing = findChecklistByName(savedChecklists, name);
+    if (existing) {
+      applyChecklist(existing);
+      void persistLastChecklistId(existing.id);
+      return;
     }
+
+    setChecklist(null);
+    setLocalItems(getChecklistTemplateItems(name));
   };
 
   const handleSavePlan = async () => {
@@ -142,16 +192,31 @@ export default function ChecklistGeneratorScreen() {
       Alert.alert('Error', 'Please select an event type first');
       return;
     }
-    
+
     setActionLoading(true);
     try {
-      if (checklist?.id) {
-        // Update existing
-        const res = await updateChecklistItems({
-          checklist_id: checklist.id,
-          items: localItems
-        }, accessToken || '');
+      const existingForEvent = findChecklistByName(savedChecklists, selectedEventType);
+      const checklistId = checklist?.id ?? existingForEvent?.id;
+
+      if (checklistId) {
+        const res = await updateChecklistItems(
+          { checklist_id: checklistId, items: localItems },
+          accessToken || ''
+        );
         if (res.success) {
+          const updatedChecklist: Checklist = {
+            id: checklistId,
+            customer_id: checklist?.customer_id ?? existingForEvent?.customer_id ?? '',
+            name: selectedEventType,
+            items: res.items,
+          };
+          setChecklist(updatedChecklist);
+          setLocalItems(toLocalItems(res.items));
+          setSavedChecklists((prev) => {
+            const others = prev.filter((c) => c.id !== checklistId);
+            return [...others, updatedChecklist];
+          });
+          await persistLastChecklistId(checklistId);
           Alert.alert('Success', 'Plan updated successfully!');
         }
       } else {
@@ -165,6 +230,12 @@ export default function ChecklistGeneratorScreen() {
         );
         if (res.success) {
           setChecklist(res.checklist);
+          setLocalItems(toLocalItems(res.checklist.items || []));
+          setSavedChecklists((prev) => {
+            const others = prev.filter((c) => c.id !== res.checklist.id);
+            return [...others, res.checklist];
+          });
+          await persistLastChecklistId(res.checklist.id);
           Alert.alert('Success', 'Plan saved successfully!');
         }
       }
@@ -232,49 +303,9 @@ export default function ChecklistGeneratorScreen() {
     ]);
   };
 
-  const handleExportPDF = async () => {
-    try {
-      setActionLoading(true);
-      const html = `
-        <html>
-          <body style="font-family: sans-serif; padding: 40px;">
-            <h1 style="color: #003366;">${selectedEventType} Checklist</h1>
-            <hr/>
-            ${categories.map(cat => `
-              <div style="margin-bottom: 20px;">
-                <h2 style="color: ${cat.color};">${cat.title}</h2>
-                <ul style="list-style-type: none; padding: 0;">
-                  ${localItems.filter(i => i.category === cat.title).map(item => `
-                    <li style="padding: 8px; border-bottom: 1px solid #eee; display: flex; align-items: center;">
-                      <span style="margin-right: 10px;">${item.is_completed ? '☑' : '☐'}</span>
-                      <span style="${item.is_completed ? 'text-decoration: line-through; color: #999;' : ''}">${item.task}</span>
-                      <span style="margin-left: auto; font-size: 10px; padding: 2px 6px; border-radius: 4px; background: #eee;">${item.priority || 'medium'}</span>
-                    </li>
-                  `).join('')}
-                </ul>
-              </div>
-            `).join('')}
-          </body>
-        </html>
-      `;
-
-      const { uri } = await Print.printToFileAsync({ html });
-      await Sharing.shareAsync(uri);
-    } catch (err) {
-      Alert.alert('Error', 'Failed to generate PDF');
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
-  const openCategoryDetails = (category: any) => {
-    setActiveCategory(category);
-    setShowStepDetails(true);
-  };
-
   const categories = useMemo(() => {
     if (localItems.length === 0) return [];
-    
+
     const groups: Record<string, any[]> = {};
     localItems.forEach(item => {
       const cat = item.category || 'General';
@@ -298,6 +329,45 @@ export default function ChecklistGeneratorScreen() {
       };
     });
   }, [localItems]);
+
+  const handleExportPDF = async () => {
+    try {
+      setActionLoading(true);
+      const logoBase64 = await loadPdfLogoBase64();
+
+      const userName = [user?.first_name, user?.last_name].filter(Boolean).join(' ') || 'Guest';
+
+      const pdfCategories = categories.map((cat) => ({
+        title: cat.title,
+        items: localItems
+          .filter((i) => i.category === cat.title)
+          .map((item) => ({
+            task: item.task,
+            priority: item.priority,
+            is_completed: item.is_completed,
+          })),
+      }));
+
+      const html = buildChecklistPdfHtml({
+        eventName: selectedEventType,
+        userName,
+        logoBase64,
+        categories: pdfCategories,
+      });
+
+      const { uri } = await Print.printToFileAsync({ html });
+      await Sharing.shareAsync(uri);
+    } catch (err) {
+      Alert.alert('Error', 'Failed to generate PDF');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const openCategoryDetails = (category: any) => {
+    setActiveCategory(category);
+    setShowStepDetails(true);
+  };
 
   return (
     <View style={styles.container}>

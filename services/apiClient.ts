@@ -6,7 +6,14 @@ import axios, {
   InternalAxiosRequestConfig,
 } from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { clearAuthStorage, persistSessionTokens } from '@/constants/authStorage';
+import {
+  ACCESS_TOKEN_KEY,
+  clearAuthStorage,
+  persistSessionTokens,
+  REFRESH_TOKEN_KEY,
+  ACCESS_TOKEN_EXPIRES_AT_KEY,
+} from '@/constants/authStorage';
+import { PROACTIVE_REFRESH_BUFFER_SEC } from '@/constants/tokenRefresh';
 import { emitAuthSessionCleared, emitAuthTokensRefreshed } from '@/services/authSessionBridge';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://49.248.202.218:5000/';
@@ -140,6 +147,31 @@ export function refreshSessionTokens(): Promise<{
   return ensureTokenRefresh();
 }
 
+function getRefreshBufferMs(): number {
+  return Math.max(30_000, PROACTIVE_REFRESH_BUFFER_SEC * 1000);
+}
+
+/**
+ * Refresh access token before it expires (single-flight). Used on every protected request
+ * and by proactive scheduling so foreground/background transitions stay authenticated.
+ */
+export async function ensureAccessTokenFreshBeforeRequest(): Promise<void> {
+  const refreshToken = await AsyncStorage.getItem(REFRESH_TOKEN_KEY);
+  if (!refreshToken) {
+    return;
+  }
+
+  const expiresAtStr = await AsyncStorage.getItem(ACCESS_TOKEN_EXPIRES_AT_KEY);
+  const bufferMs = getRefreshBufferMs();
+  const expiresAt = expiresAtStr ? Number(expiresAtStr) : NaN;
+  const needsRefresh =
+    !expiresAtStr || !Number.isFinite(expiresAt) || Date.now() >= expiresAt - bufferMs;
+
+  if (needsRefresh) {
+    await ensureTokenRefresh();
+  }
+}
+
 apiClient.interceptors.request.use(
   (config) => {
     console.log(`[API REQUEST] ${config.method?.toUpperCase()} ${config.url}`);
@@ -153,6 +185,26 @@ apiClient.interceptors.request.use(
     console.error('[API REQUEST ERROR]', error);
     return Promise.reject(error);
   }
+);
+
+/** Runs before logging: proactive refresh + always attach latest access token from storage. */
+apiClient.interceptors.request.use(
+  async (config) => {
+    if (!shouldAttemptRefreshForUrl(config.url)) {
+      return config;
+    }
+    try {
+      await ensureAccessTokenFreshBeforeRequest();
+      const accessToken = await AsyncStorage.getItem(ACCESS_TOKEN_KEY);
+      if (accessToken) {
+        setRequestAuthHeader(config, accessToken);
+      }
+    } catch {
+      // Session cleared in doTokenRefresh — request will 401 and user is sent to login
+    }
+    return config;
+  },
+  (error) => Promise.reject(error)
 );
 
 apiClient.interceptors.response.use(
