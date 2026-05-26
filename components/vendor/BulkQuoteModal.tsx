@@ -18,6 +18,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { getCategoryTree } from '@/services/categoryService';
 import { CategoryTreeNode } from '@/types/category.types';
 import { submitCustomerLead } from '@/services/leadService';
+import { notifyQuotesChanged } from '@/utils/quoteRefreshBus';
 import { VendorResult } from '@/services/vendorSearchService';
 
 interface BulkQuoteModalProps {
@@ -119,7 +120,12 @@ export default function BulkQuoteModal({
       );
 
       const failures = (results as any[]).filter(r => !r.success);
-      
+      const successCount = vendors.length - failures.length;
+
+      if (successCount > 0) {
+        notifyQuotesChanged(successCount);
+      }
+
       if (failures.length === 0) {
         Alert.alert('Success', `Quote requests have been sent successfully to all ${vendors.length} vendors!`);
         onClose();

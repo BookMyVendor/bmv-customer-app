@@ -18,6 +18,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { getCategoryTree } from '@/services/categoryService';
 import { CategoryTreeNode } from '@/types/category.types';
 import { submitCustomerLead } from '@/services/leadService';
+import { notifyQuotesChanged } from '@/utils/quoteRefreshBus';
 
 interface QuoteModalProps {
   visible: boolean;
@@ -110,6 +111,7 @@ export default function QuoteModal({
       }, accessToken || undefined);
 
       if (response.success) {
+        notifyQuotesChanged(1);
         Alert.alert('Success', 'Your quote request has been sent successfully!');
         onClose();
       }

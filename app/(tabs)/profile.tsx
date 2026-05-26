@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { View, StyleSheet, ScrollView, RefreshControl } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { HomeHeader } from '@/components/home/HomeHeader';
@@ -12,14 +12,16 @@ import { getMe } from '@/services/customerService';
 import { Customer } from '@/types/customer.types';
 import { getSavedVendors } from '@/services/savedVendorService';
 import { listCustomerReviews } from '@/services/reviewService';
+import { listCustomerLeads } from '@/services/leadService';
 import { listGuests, getOrCreateGuestList } from '@/services/guestService';
+import { subscribeQuoteRefresh } from '@/utils/quoteRefreshBus';
 
 export default function ProfileScreen() {
   const { accessToken, user } = useAuth();
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [isEditModalVisible, setIsEditModalVisible] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [stats, setStats] = useState({ saved: 0, reviews: 0, guests: 0 });
+  const [stats, setStats] = useState({ saved: 0, reviews: 0, quotes: 0, guests: 0 });
 
   const loadCustomerData = useCallback(async () => {
     if (!accessToken) return;
@@ -37,7 +39,7 @@ export default function ProfileScreen() {
 
   const loadStats = useCallback(async (cust: Customer | null) => {
     if (!accessToken || !cust) return;
-    const next = { saved: 0, reviews: 0, guests: 0 };
+    const next = { saved: 0, reviews: 0, quotes: 0, guests: 0 };
 
     try {
       const saved = await getSavedVendors(cust.id);
@@ -47,6 +49,11 @@ export default function ProfileScreen() {
     try {
       const rev = await listCustomerReviews(accessToken);
       if (rev?.success) next.reviews = rev.reviews?.length || 0;
+    } catch (e) { /* ignore */ }
+
+    try {
+      const quotes = await listCustomerLeads({ lead_type: 'quote_request', limit: 100 }, accessToken);
+      if (quotes?.success) next.quotes = quotes.leads?.length || 0;
     } catch (e) { /* ignore */ }
 
     try {
@@ -60,6 +67,9 @@ export default function ProfileScreen() {
     setStats(next);
   }, [accessToken]);
 
+  const customerRef = useRef<Customer | null>(null);
+  customerRef.current = customer;
+
   const reloadAll = useCallback(async () => {
     const cust = await loadCustomerData();
     await loadStats(cust);
@@ -70,6 +80,15 @@ export default function ProfileScreen() {
       reloadAll();
     }, [reloadAll])
   );
+
+  useEffect(() => {
+    return subscribeQuoteRefresh((event) => {
+      if (event.delta) {
+        setStats((prev) => ({ ...prev, quotes: prev.quotes + event.delta! }));
+      }
+      void loadStats(customerRef.current);
+    });
+  }, [loadStats]);
 
   const handleEdit = () => setIsEditModalVisible(true);
 
@@ -113,7 +132,14 @@ export default function ProfileScreen() {
       iconBg: '#FEF3C7',
       href: '/my-reviews',
     },
-    
+    {
+      icon: 'document-text',
+      value: stats.quotes,
+      label: 'Quotes',
+      tint: '#2563EB',
+      iconBg: '#DBEAFE',
+      href: '/my-quotes',
+    },
   ];
 
   return (

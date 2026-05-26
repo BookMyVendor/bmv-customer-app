@@ -100,7 +100,15 @@ export const ProfileMenu = () => {
           iconColor="#D97706"
           onPress={() => router.push('/my-reviews')}
         />
-      
+        <MenuItem
+          icon="document-text"
+          label="My Quotes"
+          subtitle="Quote requests you've sent"
+          iconBg="#DBEAFE"
+          iconColor="#2563EB"
+          isLast
+          onPress={() => router.push('/my-quotes')}
+        />
       </View>
 
       {/* Logout */}
