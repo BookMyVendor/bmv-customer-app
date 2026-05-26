@@ -12,6 +12,7 @@ import {
   ApiError,
 } from '@/types/auth.types';
 import { resolveAuthError } from '@/utils/customerActive';
+import { toCustomerPhoneE164 } from '@/utils/phone';
 import { apiPost } from './apiClient';
 
 export async function sendOtp(
@@ -19,10 +20,11 @@ export async function sendOtp(
   deviceInfo?: SendOtpRequest['deviceInfo']
 ): Promise<SendOtpResponse> {
   try {
-    console.log('[AUTH SERVICE] Sending OTP to phone:', phone);
+    const e164Phone = toCustomerPhoneE164(phone);
+    console.log('[AUTH SERVICE] Sending OTP to phone:', e164Phone);
     const response = await apiPost<SendOtpResponse>(
       'functions/v1/auth-customer-send-otp',
-      { phone, deviceInfo }
+      { phone: e164Phone, deviceInfo }
     );
     console.log('[AUTH SERVICE] OTP sent successfully:', response);
     return response;
@@ -38,10 +40,11 @@ export async function verifyOtp(
   deviceInfo?: VerifyOtpRequest['deviceInfo']
 ): Promise<VerifyOtpResponse> {
   try {
-    console.log('[AUTH SERVICE] Verifying OTP for phone:', phone);
+    const e164Phone = toCustomerPhoneE164(phone);
+    console.log('[AUTH SERVICE] Verifying OTP for phone:', e164Phone);
     const response = await apiPost<VerifyOtpResponse>(
       'functions/v1/auth-customer-verify-otp',
-      { phone, otp, deviceInfo }
+      { phone: e164Phone, otp, deviceInfo }
     );
     console.log('[AUTH SERVICE] OTP verified successfully:', response);
     return response;
@@ -55,10 +58,11 @@ export async function checkMobileExists(
   phone: string
 ): Promise<CheckMobileExistsResponse> {
   try {
-    console.log('[AUTH SERVICE] Checking if phone exists:', phone);
+    const e164Phone = toCustomerPhoneE164(phone);
+    console.log('[AUTH SERVICE] Checking if phone exists:', e164Phone);
     const response = await apiPost<CheckMobileExistsResponse>(
       'functions/v1/auth-customer-check-number',
-      { phone }
+      { phone: e164Phone }
     );
     console.log('[AUTH SERVICE] Phone check result:', response);
     return response;
@@ -71,10 +75,11 @@ export async function checkMobileExists(
 
 export async function resendOtp(phone: string): Promise<ResendOtpResponse> {
   try {
-    console.log('[AUTH SERVICE] Resending OTP to phone:', phone);
+    const e164Phone = toCustomerPhoneE164(phone);
+    console.log('[AUTH SERVICE] Resending OTP to phone:', e164Phone);
     const response = await apiPost<ResendOtpResponse>(
       'functions/v1/auth-customer-resend-otp',
-      { phone }
+      { phone: e164Phone }
     );
     console.log('[AUTH SERVICE] OTP resent successfully:', response);
     return response;

@@ -26,6 +26,7 @@ import {
   INACTIVE_CUSTOMER_MESSAGE,
   isInactiveAccountError,
 } from '@/utils/customerActive';
+import { toCustomerPhoneE164 } from '@/utils/phone';
 
 const C = {
   navy: '#050A30',
@@ -180,7 +181,7 @@ export default function LoginScreen() {
 
     setIsSendingOtp(true);
     try {
-      const phoneNumber = `+91${mobileNumber}`;
+      const phoneNumber = toCustomerPhoneE164(mobileNumber);
       console.log('[LOGIN] Send OTP:', phoneNumber);
       await sendOtp(phoneNumber);
       goToVerifyStep();
@@ -204,7 +205,7 @@ export default function LoginScreen() {
       return;
     }
 
-    const phoneNumber = `+91${mobileNumber}`;
+    const phoneNumber = toCustomerPhoneE164(mobileNumber);
     setIsVerifying(true);
     try {
       const response = await verifyOtp(phoneNumber, otpValue);
@@ -253,7 +254,7 @@ export default function LoginScreen() {
   };
 
   const handleResendOTP = async () => {
-    const phoneNumber = `+91${mobileNumber}`;
+    const phoneNumber = toCustomerPhoneE164(mobileNumber);
     setIsResending(true);
     try {
       await resendOtp(phoneNumber);

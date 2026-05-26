@@ -8,6 +8,7 @@ import {
   CustomerMeUpdateResponse,
 } from '@/types/customer.types';
 import { assertCustomerIsActive } from '@/utils/customerActive';
+import { toCustomerPhoneE164 } from '@/utils/phone';
 import { apiPost } from './apiClient';
 
 /** Returns customer profile by phone; throws if account exists but is deactivated. */
@@ -23,7 +24,7 @@ export async function getCustomerByPhone(
   try {
     const response = await apiPost<CustomerByPhoneResponse>(
       'functions/v1/customers-by-phone',
-      { phone }
+      { phone: toCustomerPhoneE164(phone) }
     );
     return response;
   } catch (error) {
