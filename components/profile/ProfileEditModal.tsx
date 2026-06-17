@@ -3,11 +3,11 @@ import { View, Text, StyleSheet, Modal, TextInput, TouchableOpacity, ScrollView,
 import { Customer } from '@/types/customer.types';
 import { VerifyOtpResponse } from '@/types/auth.types';
 
-interface LocationOption {
-  Name: string;
-  District: string;
-  State: string;
-}
+import {
+  lookupPincodePlaces,
+  customerAddressFromPlace,
+  type PincodePlace,
+} from '@/services/pincodeService';
 
 interface ProfileEditModalProps {
   visible: boolean;
@@ -28,7 +28,7 @@ export const ProfileEditModal: React.FC<ProfileEditModalProps> = ({ visible, cus
     area: '',
     registration_source: 'mobile',
   });
-  const [locationOptions, setLocationOptions] = useState<LocationOption[]>([]);
+  const [locationOptions, setLocationOptions] = useState<PincodePlace[]>([]);
   const [isLoadingPincode, setIsLoadingPincode] = useState(false);
 
   useEffect(() => {
@@ -48,37 +48,33 @@ export const ProfileEditModal: React.FC<ProfileEditModalProps> = ({ visible, cus
 
   useEffect(() => {
     const fetchPincodeData = async () => {
-      if (formData.pincode.length === 6) {
-        setIsLoadingPincode(true);
-        try {
-          const response = await fetch(`https://api.postalpincode.in/pincode/${formData.pincode}`);
-          const data = await response.json();
-          if (data && data[0]?.Status === 'Success' && data[0]?.PostOffice) {
-            const options = data[0].PostOffice.map((po: any) => ({
-              Name: po.Name,
-              District: po.District,
-              State: po.State,
-            }));
-            setLocationOptions(options);
-            if (options.length === 1) {
-              setFormData({
-                ...formData,
-                city: options[0].District,
-                state: options[0].State,
-                area: options[0].Name,
-              });
-            }
-          } else {
-            setLocationOptions([]);
-          }
-        } catch (error) {
-          console.error('Error fetching pincode data:', error);
-          setLocationOptions([]);
-        } finally {
-          setIsLoadingPincode(false);
-        }
-      } else {
+      if (formData.pincode.length !== 6) {
         setLocationOptions([]);
+        return;
+      }
+
+      setIsLoadingPincode(true);
+      try {
+        const places = await lookupPincodePlaces(formData.pincode);
+        if (places.length > 0) {
+          setLocationOptions(places);
+          if (places.length === 1) {
+            const fill = customerAddressFromPlace(places[0]);
+            setFormData((prev) => ({
+              ...prev,
+              city: fill.city,
+              state: fill.state,
+              area: fill.area,
+            }));
+          }
+        } else {
+          setLocationOptions([]);
+        }
+      } catch (error) {
+        console.error('Error fetching pincode data:', error);
+        setLocationOptions([]);
+      } finally {
+        setIsLoadingPincode(false);
       }
     };
     fetchPincodeData();
@@ -88,12 +84,13 @@ export const ProfileEditModal: React.FC<ProfileEditModalProps> = ({ visible, cus
     onSave(formData);
   };
 
-  const handleLocationSelect = (option: LocationOption) => {
+  const handleLocationSelect = (option: PincodePlace) => {
+    const fill = customerAddressFromPlace(option);
     setFormData({
       ...formData,
-      city: option.District,
-      state: option.State,
-      area: option.Name,
+      city: fill.city,
+      state: fill.state,
+      area: fill.area,
     });
     setLocationOptions([]);
   };
@@ -174,20 +171,20 @@ export const ProfileEditModal: React.FC<ProfileEditModalProps> = ({ visible, cus
                     <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipsScroll}>
                       {locationOptions.map((option, index) => (
                         <TouchableOpacity
-                          key={index}
+                          key={`${option.place_name}-${index}`}
                           style={[
                             styles.chip,
-                            formData.area === option.Name && styles.chipSelected,
+                            formData.area === option.place_name && styles.chipSelected,
                           ]}
                           onPress={() => handleLocationSelect(option)}
                         >
                           <Text
                             style={[
                               styles.chipText,
-                              formData.area === option.Name && styles.chipTextSelected,
+                              formData.area === option.place_name && styles.chipTextSelected,
                             ]}
                           >
-                            {option.Name}
+                            {option.place_name}
                           </Text>
                         </TouchableOpacity>
                       ))}
