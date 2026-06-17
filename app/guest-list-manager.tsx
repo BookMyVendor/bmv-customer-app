@@ -1,11 +1,12 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Stack, router } from 'expo-router';
+import { Stack } from 'expo-router';
+import { ScreenHeroHeader } from '@/components/navigation/ScreenHeroHeader';
 import { StatusBar } from 'expo-status-bar';
-import React, { useState, useEffect } from 'react';
-import { KeyboardAvoidingView, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, Alert, ActivityIndicator, RefreshControl, useWindowDimensions } from 'react-native';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Keyboard, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, Alert, ActivityIndicator, RefreshControl, useWindowDimensions } from 'react-native';
 import { GestureHandlerRootView, Swipeable } from 'react-native-gesture-handler';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Contacts from 'expo-contacts';
 import { useAuth } from '@/context/AuthContext';
 import { getOrCreateGuestList, listGuests, addGuest, updateGuest, deleteGuest } from '@/services/guestService';
@@ -182,6 +183,39 @@ export default function GuestListManagerScreen() {
   const [showContactsModal, setShowContactsModal] = useState(false);
   const [loadingContacts, setLoadingContacts] = useState(false);
   const [contactSearch, setContactSearch] = useState('');
+  const guestFormScrollRef = useRef<ScrollView>(null);
+  /** Transparent Modal ignores window resize — lift sheet by keyboard height (Android + iOS). */
+  const [keyboardPad, setKeyboardPad] = useState(0);
+  const scrollGuestFormToFocusedInput = useCallback(() => {
+    const scrollToField = () => {
+      guestFormScrollRef.current?.scrollToEnd({ animated: true });
+    };
+    requestAnimationFrame(scrollToField);
+    if (Platform.OS === 'android') {
+      setTimeout(scrollToField, 150);
+      setTimeout(scrollToField, 350);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isModalVisible) {
+      setKeyboardPad(0);
+      return;
+    }
+    const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const onShow = (e: { endCoordinates: { height: number } }) => {
+      setKeyboardPad(e.endCoordinates.height);
+      scrollGuestFormToFocusedInput();
+    };
+    const onHide = () => setKeyboardPad(0);
+    const subShow = Keyboard.addListener(showEvt, onShow);
+    const subHide = Keyboard.addListener(hideEvt, onHide);
+    return () => {
+      subShow.remove();
+      subHide.remove();
+    };
+  }, [isModalVisible, scrollGuestFormToFocusedInput]);
 
   useEffect(() => {
     if (accessToken) {
@@ -433,26 +467,7 @@ export default function GuestListManagerScreen() {
         <Stack.Screen options={{ headerShown: false }} />
         <StatusBar style="dark" />
 
-        <LinearGradient
-          colors={['#FFFBFF', '#F5F3FF', '#EEF2FF', '#ECFEFF']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.heroGradient}
-        >
-          <SafeAreaView edges={['top']}>
-            <View style={styles.heroRow}>
-              <TouchableOpacity style={styles.heroBack} onPress={() => router.back()} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                <Ionicons name="chevron-back" size={24} color="#334155" />
-              </TouchableOpacity>
-              <View style={styles.heroTitleBlock}>
-                <Text style={styles.heroEyebrow}>Guest list</Text>
-                <Text style={styles.heroTitle} numberOfLines={1}>
-                  {currentEventName}
-                </Text>
-              </View>
-            </View>
-          </SafeAreaView>
-        </LinearGradient>
+        <ScreenHeroHeader eyebrow="Guest list" title={currentEventName} />
 
         <ScrollView
           showsVerticalScrollIndicator={false}
@@ -571,12 +586,22 @@ export default function GuestListManagerScreen() {
           animationType="slide"
           onRequestClose={() => setModalVisible(false)}
         >
-          <Pressable style={styles.modalOverlay} onPress={() => setModalVisible(false)} />
-          <KeyboardAvoidingView
-            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-            style={styles.modalContent}
-          >
-            <ScrollView showsVerticalScrollIndicator={false} bounces={false}>
+          <View style={styles.modalOverlay}>
+            <Pressable style={StyleSheet.absoluteFillObject} onPress={() => setModalVisible(false)} />
+            <View style={[styles.modalKeyboardWrap, { marginBottom: keyboardPad }]}>
+              <View style={styles.modalContent}>
+            <ScrollView
+              ref={guestFormScrollRef}
+              showsVerticalScrollIndicator={false}
+              bounces={false}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
+              automaticallyAdjustKeyboardInsets
+              contentContainerStyle={[
+                styles.modalScrollContent,
+                keyboardPad > 0 && { paddingBottom: 48 },
+              ]}
+            >
               <View style={styles.modalHeader}>
                 <Text style={styles.modalTitle}>{editingGuest ? 'Edit guest' : 'Add guest'}</Text>
                 <TouchableOpacity style={styles.closeButton} onPress={() => setModalVisible(false)}>
@@ -631,6 +656,7 @@ export default function GuestListManagerScreen() {
                   value={email}
                   onChangeText={handleEmailChange}
                   onBlur={() => setEmailError(getEmailValidationError(email) || '')}
+                  onFocus={scrollGuestFormToFocusedInput}
                   keyboardType="email-address"
                   autoCapitalize="none"
                   autoCorrect={false}
@@ -677,6 +703,7 @@ export default function GuestListManagerScreen() {
                   style={styles.fieldInput}
                   value={dietary}
                   onChangeText={setDietary}
+                  onFocus={scrollGuestFormToFocusedInput}
                   placeholderTextColor="#BBB"
                 />
 
@@ -704,7 +731,9 @@ export default function GuestListManagerScreen() {
                 </View>
               </View>
             </ScrollView>
-          </KeyboardAvoidingView>
+              </View>
+            </View>
+          </View>
         </Modal>
 
         <Modal
@@ -851,45 +880,6 @@ export default function GuestListManagerScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F1F5F9' },
-  heroGradient: {
-    borderBottomLeftRadius: 28,
-    borderBottomRightRadius: 28,
-    overflow: 'hidden',
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(148, 163, 184, 0.2)',
-  },
-  heroRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingTop: 6,
-    paddingBottom: 18,
-    gap: 12,
-  },
-  heroBack: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    backgroundColor: 'rgba(255,255,255,0.85)',
-    borderWidth: 1,
-    borderColor: 'rgba(226, 232, 240, 0.95)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#64748B',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 6,
-    elevation: 2,
-  },
-  heroTitleBlock: { flex: 1, minWidth: 0 },
-  heroEyebrow: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#64748B',
-    letterSpacing: 0.8,
-    textTransform: 'uppercase',
-  },
-  heroTitle: { fontSize: 22, fontWeight: '800', color: '#0F172A', marginTop: 4, letterSpacing: -0.3 },
 
   scrollContent: { paddingTop: 16 },
 
@@ -1118,15 +1108,25 @@ const styles = StyleSheet.create({
   fab: { flex: 1, justifyContent: 'center', alignItems: 'center' },
 
   // Modal
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)' },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'flex-end',
+  },
+  modalKeyboardWrap: {
+    width: '100%',
+    maxHeight: '88%',
+  },
   modalContent: {
     backgroundColor: '#fff',
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
-    maxHeight: '88%',
-    paddingBottom: 40,
     borderTopWidth: 1,
     borderTopColor: '#F1F5F9',
+  },
+  modalScrollContent: {
+    paddingBottom: 32,
+    flexGrow: 1,
   },
   modalHeader: {
     flexDirection: 'row',

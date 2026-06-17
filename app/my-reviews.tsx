@@ -1,14 +1,22 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, FlatList, ActivityIndicator, TouchableOpacity, Image, ScrollView, SafeAreaView } from 'react-native';
-import { useRouter, Stack } from 'expo-router';
+import { View, Text, StyleSheet, FlatList, ActivityIndicator, Image, ScrollView } from 'react-native';
+import { Stack } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/context/AuthContext';
 import { listCustomerReviews } from '@/services/reviewService';
 import { Review } from '@/types/review.types';
 import { StatusBar } from 'expo-status-bar';
+import { ScreenHeroHeader } from '@/components/navigation/ScreenHeroHeader';
+
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://49.248.202.218:5000/';
+
+function getMediaUrl(url: string | null | undefined): string | null {
+  if (!url || url.trim() === '') return null;
+  if (url.startsWith('http://') || url.startsWith('https://')) return url;
+  return `${API_URL}${url.startsWith('/') ? url.slice(1) : url}`;
+}
 
 export default function MyReviewsScreen() {
-  const router = useRouter();
   const { accessToken } = useAuth();
   const [reviews, setReviews] = useState<Review[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -82,7 +90,7 @@ export default function MyReviewsScreen() {
           {item.media.map((mediaItem) => (
             <Image
               key={mediaItem.file_id}
-              source={{ uri: mediaItem.url }}
+              source={{ uri: getMediaUrl(mediaItem.url) || getMediaUrl(mediaItem.file_path) || '' }}
               style={styles.reviewImage}
               resizeMode="cover"
             />
@@ -100,18 +108,12 @@ export default function MyReviewsScreen() {
   );
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <View style={styles.safeArea}>
       <Stack.Screen options={{ headerShown: false }} />
       <StatusBar style="dark" />
-      <View style={styles.container}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-            <Ionicons name="arrow-back" size={24} color="#1F2937" />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>My Reviews</Text>
-          <View style={{ width: 40 }} />
-        </View>
+      <ScreenHeroHeader eyebrow="Account" title="My Reviews" />
 
+      <View style={styles.container}>
         {isLoading ? (
           <View style={styles.centerContainer}>
             <ActivityIndicator size="large" color="#3B82F6" />
@@ -134,7 +136,7 @@ export default function MyReviewsScreen() {
           />
         )}
       </View>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -145,29 +147,6 @@ const styles = StyleSheet.create({
   },
   container: {
     flex: 1,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-  },
-  backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#F3F4F6',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#1F2937',
   },
   centerContainer: {
     flex: 1,

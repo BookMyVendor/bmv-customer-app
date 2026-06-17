@@ -1,4 +1,4 @@
-package com.bnt.bmvCustomerApp
+package com.bnt.bmv.customerapp
 
 import android.app.Application
 import android.content.res.Configuration

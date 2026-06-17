@@ -1,8 +1,9 @@
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { Stack, router } from 'expo-router';
+import { Stack } from 'expo-router';
 import React, { useState, useEffect, useMemo } from 'react';
 import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, ActivityIndicator, Modal, Alert, KeyboardAvoidingView, Platform } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { ScreenHeroHeader } from '@/components/navigation/ScreenHeroHeader';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { buildPdfDocumentHtml, loadPdfLogoBase64 } from '@/utils/pdfExport';
@@ -520,17 +521,7 @@ export default function AIBudgetPlannerScreen() {
     <View style={styles.container}>
       <Stack.Screen options={{ headerShown: false }} />
 
-      {/* Header */}
-      <SafeAreaView style={styles.header} edges={['top']}>
-        <View style={styles.headerContent}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-            <Ionicons name="chevron-back" size={28} color="#003366" />
-          </TouchableOpacity>
-          <View style={styles.headerTitles}>
-            <Text style={styles.headerTitle}>AI Budget Planner</Text>
-          </View>
-        </View>
-      </SafeAreaView>
+      <ScreenHeroHeader eyebrow="AI Tools" title="Budget Planner" />
 
       <ScrollView
         showsVerticalScrollIndicator={false}
@@ -726,14 +717,6 @@ export default function AIBudgetPlannerScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F9FAFC' },
-
-  // Header
-  header: { backgroundColor: '#F9FAFC' },
-  headerContent: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 8 },
-  backButton: { padding: 4 },
-  headerTitles: { flex: 1, marginLeft: 8 },
-  headerTitle: { fontSize: 18, fontWeight: '700', color: '#1A1A1A' },
-
 
   scrollContent: { paddingTop: 0 },
 

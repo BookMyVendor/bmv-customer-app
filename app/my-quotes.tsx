@@ -6,7 +6,6 @@ import {
   FlatList,
   ActivityIndicator,
   TouchableOpacity,
-  SafeAreaView,
   RefreshControl,
 } from 'react-native';
 import { useRouter, Stack, useFocusEffect } from 'expo-router';
@@ -16,6 +15,7 @@ import { useAuth } from '@/context/AuthContext';
 import { listCustomerLeads } from '@/services/leadService';
 import { CustomerLeadSummary } from '@/types/lead.types';
 import { subscribeQuoteRefresh } from '@/utils/quoteRefreshBus';
+import { ScreenHeroHeader } from '@/components/navigation/ScreenHeroHeader';
 
 function formatDate(dateString: string | null) {
   if (!dateString) return '—';
@@ -149,18 +149,12 @@ export default function MyQuotesScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <View style={styles.safeArea}>
       <Stack.Screen options={{ headerShown: false }} />
       <StatusBar style="dark" />
-      <View style={styles.container}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-            <Ionicons name="arrow-back" size={24} color="#1F2937" />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>My Quotes</Text>
-          <View style={{ width: 40 }} />
-        </View>
+      <ScreenHeroHeader eyebrow="Account" title="My Quotes" />
 
+      <View style={styles.container}>
         {isLoading ? (
           <View style={styles.centerContainer}>
             <ActivityIndicator size="large" color="#3B82F6" />
@@ -192,7 +186,7 @@ export default function MyQuotesScreen() {
           />
         )}
       </View>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -203,29 +197,6 @@ const styles = StyleSheet.create({
   },
   container: {
     flex: 1,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-  },
-  backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#F3F4F6',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#1F2937',
   },
   centerContainer: {
     flex: 1,

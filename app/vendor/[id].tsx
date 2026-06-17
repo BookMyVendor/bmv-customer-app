@@ -10,6 +10,7 @@ import {
   StatusBar,
   Linking,
 } from 'react-native';
+import { HeroBackButton } from '@/components/navigation/ScreenHeroHeader';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter, Stack, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -312,15 +313,8 @@ export default function VendorDetailScreen() {
           />
           <LinearGradient colors={['transparent', 'rgba(15,23,42,0.92)']} style={styles.heroBottomFade} />
 
-          <SafeAreaView style={[styles.heroTopBar, { paddingTop: insets.top }]} edges={['left', 'right']}>
-            <TouchableOpacity
-              onPress={() => router.back()}
-              style={styles.heroBackBtn}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              activeOpacity={0.85}
-            >
-              <Ionicons name="chevron-back" size={26} color="#0F172A" />
-            </TouchableOpacity>
+          <SafeAreaView style={styles.heroTopBar} edges={['top', 'left', 'right']}>
+            <HeroBackButton />
             {vendor.featured && (
               <View style={styles.featuredPill}>
                 <Ionicons name="sparkles" size={12} color="#FBBF24" />
@@ -500,6 +494,18 @@ export default function VendorDetailScreen() {
                 </View>
               </View>
               <Text style={styles.reviewQuote}>{userReview.review_text || '—'}</Text>
+              {userReview.media && userReview.media.length > 0 && (
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.reviewMedia}>
+                  {userReview.media.map((m) => (
+                    <Image
+                      key={m.file_id}
+                      source={{ uri: getMediaUrl(m.url) || getMediaUrl(m.file_path) || '' }}
+                      style={styles.reviewThumb}
+                      contentFit="cover"
+                    />
+                  ))}
+                </ScrollView>
+              )}
               <Text style={styles.reviewDate}>{new Date(userReview.created_at).toLocaleDateString()}</Text>
             </View>
           )}
@@ -529,7 +535,7 @@ export default function VendorDetailScreen() {
               {featuredReview.media && featuredReview.media.length > 0 && (
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.reviewMedia}>
                   {featuredReview.media.map((m) => (
-                    <Image key={m.file_id} source={{ uri: getMediaUrl(m.url) || '' }} style={styles.reviewThumb} contentFit="cover" />
+                    <Image key={m.file_id} source={{ uri: getMediaUrl(m.url) || getMediaUrl(m.file_path) || '' }} style={styles.reviewThumb} contentFit="cover" />
                   ))}
                 </ScrollView>
               )}
@@ -705,19 +711,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingBottom: 8,
-  },
-  heroBackBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(255,255,255,0.92)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 4,
   },
   featuredPill: {
     flexDirection: 'row',

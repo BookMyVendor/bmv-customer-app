@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, SafeAreaView, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { useRouter, Stack, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/context/AuthContext';
@@ -7,6 +7,7 @@ import { getSavedVendors } from '@/services/savedVendorService';
 import { VendorResult } from '@/services/vendorSearchService';
 import { ExploreVendorCard } from '@/components/explore/ExploreVendorCard';
 import { StatusBar } from 'expo-status-bar';
+import { ScreenHeroHeader } from '@/components/navigation/ScreenHeroHeader';
 
 export default function SavedVendorsScreen() {
   const router = useRouter();
@@ -56,17 +57,10 @@ export default function SavedVendorsScreen() {
   );
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <View style={styles.safeArea}>
       <Stack.Screen options={{ headerShown: false }} />
       <StatusBar style="dark" />
-      
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color="#1F2937" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Saved Vendors</Text>
-        <View style={{ width: 40 }} />
-      </View>
+      <ScreenHeroHeader eyebrow="Account" title="Saved Vendors" />
 
       <View style={styles.container}>
         {isLoading ? (
@@ -89,40 +83,17 @@ export default function SavedVendorsScreen() {
           />
         )}
       </View>
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#fff',
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
-  },
-  backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#F3F4F6',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#1F2937',
+    backgroundColor: '#F9FAFB',
   },
   container: {
     flex: 1,
-    backgroundColor: '#F9FAFB',
   },
   loaderContainer: {
     flex: 1,

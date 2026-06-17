@@ -19,7 +19,7 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.anonymous.bmvCustomerApp"
+      "package": "com.bnt.bmv.customerapp"
     },
     "web": {
       "output": "static",

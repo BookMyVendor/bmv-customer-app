@@ -104,15 +104,16 @@ export default function ReviewModal({
 
       const response = await submitCustomerReview(requestData, accessToken);
 
-      if (response.success && images.length > 0) {
-        const files = images.map((img) => {
+      if (images.length > 0) {
+        const reviewId = response.reviewId || initialReview?.id;
+        const files = images.map((img, index) => {
           return {
             uri: img.uri,
-            name: img.fileName || `review_${Date.now()}.jpg`,
+            name: img.fileName || `review_${Date.now()}_${index}.jpg`,
             type: img.mimeType || 'image/jpeg',
           } as any;
         });
-        await uploadReviewImages(response.reviewId || initialReview?.id, files, accessToken);
+        await uploadReviewImages(reviewId, files, accessToken);
       }
 
       Alert.alert('Success', initialReview ? 'Your review has been updated' : 'Your review has been submitted');

@@ -12,7 +12,8 @@ import * as Sharing from 'expo-sharing';
 import { buildChecklistPdfHtml, loadPdfLogoBase64 } from '@/utils/pdfExport';
 import React, { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { ScreenHeroHeader } from '@/components/navigation/ScreenHeroHeader';
 
 // Helper to get icon for category
 const getCategoryIcon = (title: string) => {
@@ -373,13 +374,10 @@ export default function ChecklistGeneratorScreen() {
     <View style={styles.container}>
       <Stack.Screen options={{ headerShown: false }} />
       
-      {/* Header */}
-      <SafeAreaView style={styles.header} edges={['top']}>
-        <View style={styles.headerContent}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-            <Ionicons name="chevron-back" size={28} color="#003366" />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Event Checklist Plan</Text>
+      <ScreenHeroHeader
+        eyebrow="AI Tools"
+        title="Event Checklist"
+        rightSlot={(
           <View style={styles.headerActions}>
             <TouchableOpacity style={styles.actionButton} onPress={handleExportPDF}>
               <Ionicons name="download-outline" size={22} color="#003366" />
@@ -389,8 +387,8 @@ export default function ChecklistGeneratorScreen() {
               <Text style={styles.saveText}>{checklist?.id ? 'Update' : 'Save'}</Text>
             </TouchableOpacity>
           </View>
-        </View>
-      </SafeAreaView>
+        )}
+      />
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         
@@ -698,26 +696,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F8FAFC',
-  },
-  header: {
-    backgroundColor: '#FFF',
-  },
-  headerContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-  },
-  backButton: {
-    padding: 4,
-  },
-  headerTitle: {
-    flex: 1,
-    marginLeft: 8,
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#1A1A1A',
   },
   headerActions: {
     flexDirection: 'row',

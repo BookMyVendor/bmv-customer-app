@@ -9,8 +9,8 @@ import {
   StatusBar,
   Dimensions,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
+import { ScreenHeroHeader } from '@/components/navigation/ScreenHeroHeader';
+import { useLocalSearchParams, Stack } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { listBusinessReviews } from '@/services/reviewService';
@@ -26,7 +26,6 @@ function getMediaUrl(url: string | null): string | null {
 
 export default function ReviewsScreen() {
   const { businessId } = useLocalSearchParams<{ businessId: string }>();
-  const router = useRouter();
   const [reviews, setReviews] = useState<Review[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -82,7 +81,7 @@ export default function ReviewsScreen() {
           contentContainerStyle={styles.mediaList}
           renderItem={({ item: media }) => (
             <Image 
-              source={{ uri: getMediaUrl(media.url) || '' }} 
+              source={{ uri: getMediaUrl(media.url) || getMediaUrl(media.file_path) || '' }} 
               style={styles.reviewImage} 
               contentFit="cover"
             />
@@ -104,16 +103,7 @@ export default function ReviewsScreen() {
       <StatusBar barStyle="dark-content" backgroundColor="#fff" />
       <Stack.Screen options={{ headerShown: false }} />
       
-      {/* Exact Match of AI Budget Planner/Compare Vendors Header Structure */}
-      <SafeAreaView style={styles.header} edges={['top', 'left', 'right']}>
-        <View style={styles.headerTop}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-            <Ionicons name="chevron-back" size={28} color="#003366" />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>All Reviews</Text>
-          <View style={{ width: 40 }} />
-        </View>
-      </SafeAreaView>
+      <ScreenHeroHeader eyebrow="Vendor" title="All Reviews" />
 
       {loading ? (
         <View style={styles.centered}>
@@ -141,29 +131,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F8F9FB',
-  },
-  header: {
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
-  },
-  headerTop: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 12,
-  },
-  backButton: {
-    padding: 4,
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: '#003366',
-    flex: 1,
-    marginLeft: 8,
   },
   centered: {
     flex: 1,

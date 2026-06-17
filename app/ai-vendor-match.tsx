@@ -20,6 +20,7 @@ import {
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
+import { HeroBackButton } from '@/components/navigation/ScreenHeroHeader';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { searchVendors, VendorResult } from '@/services/vendorSearchService';
@@ -336,9 +337,7 @@ export default function AIVendorMatchScreen() {
       >
         <SafeAreaView edges={['top', 'left', 'right']}>
           <View style={styles.selectionHeroTop}>
-            <TouchableOpacity onPress={() => router.back()} style={styles.selectionBackBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Ionicons name="chevron-back" size={24} color="#334155" />
-            </TouchableOpacity>
+            <HeroBackButton />
             <View style={styles.selectionHeroTitles}>
               <Text style={styles.selectionHeroKicker}>Compare vendors</Text>
               <Text style={styles.selectionHeroTitle}>Pick who to compare</Text>
@@ -608,13 +607,7 @@ export default function AIVendorMatchScreen() {
       >
         <SafeAreaView edges={['top', 'left', 'right']}>
           <View style={styles.compareHeroTop}>
-            <TouchableOpacity
-              onPress={() => setIsSelecting(true)}
-              style={styles.compareBackBtn}
-              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-            >
-              <Ionicons name="chevron-back" size={24} color="#334155" />
-            </TouchableOpacity>
+            <HeroBackButton onPress={() => setIsSelecting(true)} />
             <View style={styles.compareHeroTitles}>
               <Text style={styles.compareHeroKicker}>Side by side</Text>
               <Text style={styles.compareHeroTitle}>Compare vendors</Text>
@@ -816,21 +809,6 @@ const styles = StyleSheet.create({
     paddingTop: 4,
     paddingBottom: 6,
     gap: 12,
-  },
-  selectionBackBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    backgroundColor: 'rgba(255,255,255,0.85)',
-    borderWidth: 1,
-    borderColor: 'rgba(226, 232, 240, 0.9)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#64748B',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.12,
-    shadowRadius: 6,
-    elevation: 2,
   },
   selectionHeroTitles: {
     flex: 1,
@@ -1329,21 +1307,6 @@ const styles = StyleSheet.create({
     paddingTop: 4,
     paddingBottom: 8,
     gap: 12,
-  },
-  compareBackBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    backgroundColor: 'rgba(255,255,255,0.85)',
-    borderWidth: 1,
-    borderColor: 'rgba(226, 232, 240, 0.9)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#64748B',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.12,
-    shadowRadius: 6,
-    elevation: 2,
   },
   compareHeroTitles: {
     flex: 1,

@@ -18,6 +18,12 @@ import { emitAuthSessionCleared, emitAuthTokensRefreshed } from '@/services/auth
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://49.248.202.218:5000/';
 
+console.log(
+  '[API CLIENT] baseURL:',
+  API_URL,
+  process.env.EXPO_PUBLIC_API_URL ? '(from EXPO_PUBLIC_API_URL)' : '(fallback default)'
+);
+
 export interface ApiResponse<T> {
   success: boolean;
   data?: T;
@@ -174,7 +180,7 @@ export async function ensureAccessTokenFreshBeforeRequest(): Promise<void> {
 
 apiClient.interceptors.request.use(
   (config) => {
-    console.log(`[API REQUEST] ${config.method?.toUpperCase()} ${config.url}`);
+    console.log(`[API REQUEST] ${config.method?.toUpperCase()} ${config.baseURL ?? API_URL}${config.url ?? ''}`);
     console.log('[API REQUEST] Headers:', JSON.stringify(config.headers));
     if (config.data) {
       console.log('[API REQUEST] Body:', JSON.stringify(config.data));
@@ -215,10 +221,16 @@ apiClient.interceptors.response.use(
     return response;
   },
   async (error: AxiosError) => {
-    console.error(`[API RESPONSE ERROR] ${error.config?.method?.toUpperCase()} ${error.config?.url}`);
+    const fullUrl = `${error.config?.baseURL ?? API_URL}${error.config?.url ?? ''}`;
+    console.error(`[API RESPONSE ERROR] ${error.config?.method?.toUpperCase()} ${fullUrl}`);
     console.error('[API RESPONSE ERROR] Status:', error.response?.status);
     console.error('[API RESPONSE ERROR] Data:', JSON.stringify(error.response?.data));
     console.error('[API RESPONSE ERROR] Message:', error.message);
+    console.error('[API RESPONSE ERROR] Code:', error.code);
+    const nativeCause = (error as AxiosError & { cause?: { message?: string } }).cause?.message;
+    if (nativeCause) {
+      console.error('[API RESPONSE ERROR] Native cause:', nativeCause);
+    }
 
     const originalRequest = error.config as (InternalAxiosRequestConfig & { _retry?: boolean }) | undefined;
     const status = error.response?.status;
