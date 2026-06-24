@@ -4,7 +4,7 @@ import { Stack } from 'expo-router';
 import { ScreenHeroHeader } from '@/components/navigation/ScreenHeroHeader';
 import { StatusBar } from 'expo-status-bar';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Keyboard, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, Alert, ActivityIndicator, RefreshControl, useWindowDimensions } from 'react-native';
+import { Keyboard, LayoutChangeEvent, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, Alert, ActivityIndicator, RefreshControl, useWindowDimensions } from 'react-native';
 import { GestureHandlerRootView, Swipeable } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Contacts from 'expo-contacts';
@@ -150,7 +150,7 @@ const GuestCardItem = ({ guest, onDelete, onEdit }: any) => {
 
 export default function GuestListManagerScreen() {
   const insets = useSafeAreaInsets();
-  const { width: windowWidth } = useWindowDimensions();
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const statTileWidth = (windowWidth - 32 - 10) / 2;
   const { accessToken } = useAuth();
   const currentEventName = EVENT_NAME;
@@ -184,29 +184,54 @@ export default function GuestListManagerScreen() {
   const [loadingContacts, setLoadingContacts] = useState(false);
   const [contactSearch, setContactSearch] = useState('');
   const guestFormScrollRef = useRef<ScrollView>(null);
+  const modalHeaderHeightRef = useRef(0);
+  const fieldScrollY = useRef<Record<string, number>>({});
+  const activeFieldRef = useRef<string | null>(null);
   /** Transparent Modal ignores window resize — lift sheet by keyboard height (Android + iOS). */
   const [keyboardPad, setKeyboardPad] = useState(0);
-  const scrollGuestFormToFocusedInput = useCallback(() => {
-    const scrollToField = () => {
-      guestFormScrollRef.current?.scrollToEnd({ animated: true });
+
+  const guestModalMaxHeight =
+    keyboardPad > 0
+      ? windowHeight - keyboardPad - insets.top - 8
+      : Math.round(windowHeight * 0.88);
+
+  const registerFieldLayout = useCallback(
+    (key: string) => (event: LayoutChangeEvent) => {
+      fieldScrollY.current[key] = modalHeaderHeightRef.current + event.nativeEvent.layout.y;
+    },
+    []
+  );
+
+  const scrollToGuestField = useCallback((key: string) => {
+    activeFieldRef.current = key;
+    const targetY =
+      key === 'name'
+        ? 0
+        : Math.max(0, (fieldScrollY.current[key] ?? 0) - 16);
+    const scrollTo = () => {
+      guestFormScrollRef.current?.scrollTo({ y: targetY, animated: true });
     };
-    requestAnimationFrame(scrollToField);
+    requestAnimationFrame(scrollTo);
     if (Platform.OS === 'android') {
-      setTimeout(scrollToField, 150);
-      setTimeout(scrollToField, 350);
+      setTimeout(scrollTo, 100);
+      setTimeout(scrollTo, 280);
     }
   }, []);
 
   useEffect(() => {
     if (!isModalVisible) {
       setKeyboardPad(0);
+      activeFieldRef.current = null;
       return;
     }
+    guestFormScrollRef.current?.scrollTo({ y: 0, animated: false });
     const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
     const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
     const onShow = (e: { endCoordinates: { height: number } }) => {
       setKeyboardPad(e.endCoordinates.height);
-      scrollGuestFormToFocusedInput();
+      if (activeFieldRef.current) {
+        scrollToGuestField(activeFieldRef.current);
+      }
     };
     const onHide = () => setKeyboardPad(0);
     const subShow = Keyboard.addListener(showEvt, onShow);
@@ -215,7 +240,7 @@ export default function GuestListManagerScreen() {
       subShow.remove();
       subHide.remove();
     };
-  }, [isModalVisible, scrollGuestFormToFocusedInput]);
+  }, [isModalVisible, scrollToGuestField]);
 
   useEffect(() => {
     if (accessToken) {
@@ -588,7 +613,7 @@ export default function GuestListManagerScreen() {
         >
           <View style={styles.modalOverlay}>
             <Pressable style={StyleSheet.absoluteFillObject} onPress={() => setModalVisible(false)} />
-            <View style={[styles.modalKeyboardWrap, { marginBottom: keyboardPad }]}>
+            <View style={[styles.modalKeyboardWrap, { marginBottom: keyboardPad, maxHeight: guestModalMaxHeight }]}>
               <View style={styles.modalContent}>
             <ScrollView
               ref={guestFormScrollRef}
@@ -596,13 +621,17 @@ export default function GuestListManagerScreen() {
               bounces={false}
               keyboardShouldPersistTaps="handled"
               keyboardDismissMode="on-drag"
-              automaticallyAdjustKeyboardInsets
               contentContainerStyle={[
                 styles.modalScrollContent,
-                keyboardPad > 0 && { paddingBottom: 48 },
+                keyboardPad > 0 && { paddingBottom: 24 },
               ]}
             >
-              <View style={styles.modalHeader}>
+              <View
+                style={styles.modalHeader}
+                onLayout={(event) => {
+                  modalHeaderHeightRef.current = event.nativeEvent.layout.height;
+                }}
+              >
                 <Text style={styles.modalTitle}>{editingGuest ? 'Edit guest' : 'Add guest'}</Text>
                 <TouchableOpacity style={styles.closeButton} onPress={() => setModalVisible(false)}>
                   <Ionicons name="close" size={20} color="#666" />
@@ -611,14 +640,17 @@ export default function GuestListManagerScreen() {
 
               <View style={styles.modalBody}>
                 {/* Full Name */}
-                <Text style={styles.fieldLabel}>FULL NAME</Text>
-                <TextInput
-                  placeholder="e.g. John Miller"
-                  style={styles.fieldInput}
-                  value={name}
-                  onChangeText={setName}
-                  placeholderTextColor="#BBB"
-                />
+                <View onLayout={registerFieldLayout('name')}>
+                  <Text style={styles.fieldLabel}>FULL NAME</Text>
+                  <TextInput
+                    placeholder="e.g. John Miller"
+                    style={styles.fieldInput}
+                    value={name}
+                    onChangeText={setName}
+                    onFocus={() => scrollToGuestField('name')}
+                    placeholderTextColor="#BBB"
+                  />
+                </View>
 
                 {/* Contact Info */}
                 <View style={styles.fieldRow}>
@@ -637,31 +669,36 @@ export default function GuestListManagerScreen() {
                   </TouchableOpacity>
                 </View>
                 <Text style={styles.fieldHint}>10-digit Indian mobile (optional)</Text>
-                <TextInput
-                  placeholder="e.g. 9876543210"
-                  style={[styles.fieldInput, phoneError ? styles.fieldInputError : null]}
-                  value={phone}
-                  onChangeText={handlePhoneChange}
-                  onBlur={() => setPhoneError(getPhoneValidationError(phone) || '')}
-                  keyboardType="phone-pad"
-                  maxLength={PHONE_MAX_LENGTH}
-                  placeholderTextColor="#BBB"
-                />
+                <View onLayout={registerFieldLayout('phone')}>
+                  <TextInput
+                    placeholder="e.g. 9876543210"
+                    style={[styles.fieldInput, phoneError ? styles.fieldInputError : null]}
+                    value={phone}
+                    onChangeText={handlePhoneChange}
+                    onBlur={() => setPhoneError(getPhoneValidationError(phone) || '')}
+                    onFocus={() => scrollToGuestField('phone')}
+                    keyboardType="phone-pad"
+                    maxLength={PHONE_MAX_LENGTH}
+                    placeholderTextColor="#BBB"
+                  />
+                </View>
                 {phoneError ? <Text style={styles.fieldError}>{phoneError}</Text> : null}
 
-                <Text style={styles.fieldLabel}>EMAIL ADDRESS (OPTIONAL)</Text>
-                <TextInput
-                  placeholder="e.g. john@example.com"
-                  style={[styles.fieldInput, emailError ? styles.fieldInputError : null]}
-                  value={email}
-                  onChangeText={handleEmailChange}
-                  onBlur={() => setEmailError(getEmailValidationError(email) || '')}
-                  onFocus={scrollGuestFormToFocusedInput}
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  placeholderTextColor="#BBB"
-                />
+                <View onLayout={registerFieldLayout('email')}>
+                  <Text style={styles.fieldLabel}>EMAIL ADDRESS (OPTIONAL)</Text>
+                  <TextInput
+                    placeholder="e.g. john@example.com"
+                    style={[styles.fieldInput, emailError ? styles.fieldInputError : null]}
+                    value={email}
+                    onChangeText={handleEmailChange}
+                    onBlur={() => setEmailError(getEmailValidationError(email) || '')}
+                    onFocus={() => scrollToGuestField('email')}
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    placeholderTextColor="#BBB"
+                  />
+                </View>
                 {emailError ? <Text style={styles.fieldError}>{emailError}</Text> : null}
 
                 {/* Category */}
@@ -697,15 +734,17 @@ export default function GuestListManagerScreen() {
                 </View>
 
                 {/* Dietary Preferences */}
-                <Text style={styles.fieldLabel}>DIETARY PREFERENCES</Text>
-                <TextInput
-                  placeholder="Vegan, Gluten-free, etc."
-                  style={styles.fieldInput}
-                  value={dietary}
-                  onChangeText={setDietary}
-                  onFocus={scrollGuestFormToFocusedInput}
-                  placeholderTextColor="#BBB"
-                />
+                <View onLayout={registerFieldLayout('dietary')}>
+                  <Text style={styles.fieldLabel}>DIETARY PREFERENCES</Text>
+                  <TextInput
+                    placeholder="Vegan, Gluten-free, etc."
+                    style={styles.fieldInput}
+                    value={dietary}
+                    onChangeText={setDietary}
+                    onFocus={() => scrollToGuestField('dietary')}
+                    placeholderTextColor="#BBB"
+                  />
+                </View>
 
                 {/* Actions */}
                 <View style={styles.modalActions}>
@@ -1115,7 +1154,6 @@ const styles = StyleSheet.create({
   },
   modalKeyboardWrap: {
     width: '100%',
-    maxHeight: '88%',
   },
   modalContent: {
     backgroundColor: '#fff',
@@ -1123,6 +1161,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 28,
     borderTopWidth: 1,
     borderTopColor: '#F1F5F9',
+    overflow: 'hidden',
   },
   modalScrollContent: {
     paddingBottom: 32,
