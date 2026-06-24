@@ -17,7 +17,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { Image } from 'expo-image';
 import { Review, SubmitCustomerReviewRequest } from '@/types/review.types';
 import { VerifyOtpResponse } from '@/types/auth.types';
-import { submitCustomerReview, uploadReviewImages } from '@/services/reviewService';
+import { submitCustomerReview, uploadReviewImages, deleteReview } from '@/services/reviewService';
 
 interface ReviewModalProps {
   visible: boolean;
@@ -87,7 +87,13 @@ export default function ReviewModal({
 
     try {
       setIsSubmitting(true);
-      
+
+      // If editing, remove the old review first so the backend's
+      // submit endpoint (which always inserts) doesn't create a duplicate.
+      if (initialReview?.id) {
+        await deleteReview({ review_id: initialReview.id }, accessToken);
+      }
+
       const requestData: SubmitCustomerReviewRequest = {
         business_id: businessId,
         vendor_id: vendorId,
@@ -96,21 +102,18 @@ export default function ReviewModal({
         customer_id: authUser?.id || '',
       };
 
-      if (initialReview?.id) {
-        requestData.review_id = initialReview.id;
-      }
-
       const response = await submitCustomerReview(requestData, accessToken);
 
-      if (response.success && images.length > 0) {
-        const files = images.map((img) => {
+      if (images.length > 0) {
+        const reviewId = response.reviewId || initialReview?.id;
+        const files = images.map((img, index) => {
           return {
             uri: img.uri,
-            name: img.fileName || `review_${Date.now()}.jpg`,
+            name: img.fileName || `review_${Date.now()}_${index}.jpg`,
             type: img.mimeType || 'image/jpeg',
           } as any;
         });
-        await uploadReviewImages(response.reviewId || initialReview?.id, files, accessToken);
+        await uploadReviewImages(reviewId, files, accessToken);
       }
 
       Alert.alert('Success', initialReview ? 'Your review has been updated' : 'Your review has been submitted');

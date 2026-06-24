@@ -1,8 +1,8 @@
+import { useLocation } from '@/context/LocationContext';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { useLocation } from '@/context/LocationContext';
 import React, { useState } from 'react';
-import { StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, TextInput, View } from 'react-native';
 
 export const SearchBar = () => {
   const router = useRouter();
@@ -11,9 +11,9 @@ export const SearchBar = () => {
 
   const handleSearch = () => {
     if (query.trim()) {
-      router.push({
-        pathname: '/(tabs)/explore',
-        params: { query: query.trim(), city: city || undefined },
+      router.navigate({
+        pathname: '/explore',
+        params: { query: query.trim(), ...(city ? { city } : {}) },
       });
     }
   };
@@ -31,9 +31,7 @@ export const SearchBar = () => {
           onSubmitEditing={handleSearch}
           returnKeyType="search"
         />
-        <TouchableOpacity onPress={handleSearch} style={styles.filterButton}>
-          <Ionicons name="options-outline" size={20} color="#003366" />
-        </TouchableOpacity>
+
       </View>
     </View>
   );
@@ -53,10 +51,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     height: 56,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
+    shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.1,
-    shadowRadius: 12,
-    elevation: 6,
+    shadowRadius: 16,
+    elevation: 8,
   },
   searchIcon: {
     marginRight: 10,

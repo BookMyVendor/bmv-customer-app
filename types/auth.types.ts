@@ -39,6 +39,10 @@ export interface VerifyOtpResponse {
   };
 }
 
+export interface VerifyOtpResult extends VerifyOtpResponse {
+  needsProfileSetup: boolean;
+}
+
 export interface ResendOtpRequest {
   phone: string;
 }
@@ -76,6 +80,7 @@ export interface ApiError {
 
 export interface AuthState {
   isAuthenticated: boolean;
+  needsProfileSetup: boolean;
   user: VerifyOtpResponse['user'] | null;
   accessToken: string | null;
   refreshToken: string | null;
@@ -85,9 +90,9 @@ export interface AuthState {
 
 export interface AuthContextType extends AuthState {
   sendOtp: (phone: string, deviceInfo?: DeviceInfo) => Promise<SendOtpResponse>;
-  verifyOtp: (phone: string, otp: string, deviceInfo?: DeviceInfo) => Promise<VerifyOtpResponse>;
+  verifyOtp: (phone: string, otp: string, deviceInfo?: DeviceInfo) => Promise<VerifyOtpResult>;
   resendOtp: (phone: string) => Promise<ResendOtpResponse>;
-  refreshAccessToken: () => Promise<RefreshTokenResponse>;
+  refreshAccessToken: (options?: { silent?: boolean }) => Promise<RefreshTokenResponse>;
   signOut: (accessToken?: string) => Promise<void>;
   logout: () => Promise<void>;
   updateProfileName: (fullName: string) => Promise<void>;

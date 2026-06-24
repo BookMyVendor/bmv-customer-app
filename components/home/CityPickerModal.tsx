@@ -21,9 +21,10 @@ interface CityPickerModalProps {
 }
 
 export const CityPickerModal: React.FC<CityPickerModalProps> = ({ visible, onClose }) => {
-  const { city, setCity, detectLocation, isLoading } = useLocation();
+  const { city, setCity, detectLocation } = useLocation();
   const [searchQuery, setSearchQuery] = useState('');
   const [showAllCities, setShowAllCities] = useState(false);
+  const [isDetecting, setIsDetecting] = useState(false);
   const insets = useSafeAreaInsets();
 
   const filteredCities = useMemo(() => {
@@ -41,8 +42,13 @@ export const CityPickerModal: React.FC<CityPickerModalProps> = ({ visible, onClo
   };
 
   const handleDetectLocation = async () => {
-    await detectLocation();
-    onClose();
+    setIsDetecting(true);
+    try {
+      await detectLocation();
+      onClose();
+    } finally {
+      setIsDetecting(false);
+    }
   };
 
   const handleSkip = async () => {
@@ -69,6 +75,10 @@ export const CityPickerModal: React.FC<CityPickerModalProps> = ({ visible, onClo
               <Ionicons name="close" size={24} color="#333" />
             </TouchableOpacity>
           </View>
+
+          <TouchableOpacity style={styles.skipButton} onPress={handleSkip}>
+            <Text style={styles.skipButtonText}>Skip for now</Text>
+          </TouchableOpacity>
 
           <View style={styles.searchRow}>
             <View style={styles.searchContainer}>
@@ -117,7 +127,7 @@ export const CityPickerModal: React.FC<CityPickerModalProps> = ({ visible, onClo
             >
               <TouchableOpacity
                 onPress={handleDetectLocation}
-                disabled={isLoading}
+                disabled={isDetecting}
                 activeOpacity={0.8}
               >
                 <LinearGradient
@@ -126,7 +136,7 @@ export const CityPickerModal: React.FC<CityPickerModalProps> = ({ visible, onClo
                   end={{ x: 1, y: 1 }}
                   style={styles.detectBtnGradient}
                 >
-                  {isLoading ? (
+                  {isDetecting ? (
                     <ActivityIndicator size="small" color="#fff" />
                   ) : (
                     <>
@@ -178,10 +188,6 @@ export const CityPickerModal: React.FC<CityPickerModalProps> = ({ visible, onClo
                   })}
                 </View>
               </View>
-
-              <TouchableOpacity style={styles.skipButton} onPress={handleSkip}>
-                <Text style={styles.skipButtonText}>Skip for now</Text>
-              </TouchableOpacity>
             </ScrollView>
           )}
         </View>
@@ -411,16 +417,15 @@ const styles = StyleSheet.create({
     display: 'none', // Removed chips format
   },
   skipButton: {
-    height: 56,
-    borderRadius: 16,
-    backgroundColor: '#F5F5F5',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: 16,
+    alignSelf: 'flex-end',
+    paddingVertical: 4,
+    paddingHorizontal: 4,
+    marginBottom: 12,
+    marginTop: -8,
   },
   skipButtonText: {
-    fontSize: 16,
-    fontWeight: '700',
+    fontSize: 15,
+    fontWeight: '600',
     color: '#666',
   },
 });

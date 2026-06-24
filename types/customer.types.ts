@@ -9,6 +9,7 @@ export interface Customer {
   pincode: string | null;
   area: string | null;
   registration_source?: string | null;
+  is_active?: boolean;
   created_at: string;
   updated_at: string;
 }

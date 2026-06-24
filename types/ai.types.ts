@@ -86,6 +86,7 @@ export interface VendorResult {
   profile_image: string | null;
   cover_photo_url: string | null;
   business_images: string[];
+  business_videos?: string[] | null;
   calculated_rating: number | null;
   review_count: number | null;
   years_experience: number | null;

@@ -1,26 +1,48 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
+import { AppState } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   AuthState,
   AuthContextType,
   DeviceInfo,
   SendOtpResponse,
-  VerifyOtpResponse,
+  VerifyOtpResult,
   ResendOtpResponse,
   RefreshTokenResponse,
 } from '@/types/auth.types';
-import { sendOtp, verifyOtp, resendOtp, refreshAccessToken, signOut } from '@/services/authService';
-import { getCustomerByPhone, updateMe } from '@/services/customerService';
+import { sendOtp, verifyOtp, resendOtp, signOut } from '@/services/authService';
+import { getActiveCustomerByPhone, getCustomerByPhone, updateMe } from '@/services/customerService';
+import {
+  INACTIVE_CUSTOMER_MESSAGE,
+  inactiveAccountError,
+  isInactiveAccountError,
+} from '@/utils/customerActive';
+import {
+  ACCESS_TOKEN_KEY,
+  REFRESH_TOKEN_KEY,
+  USER_KEY,
+  NEEDS_PROFILE_SETUP_KEY,
+  clearAuthStorage,
+  persistSessionTokens,
+} from '@/constants/authStorage';
+import { resolveNeedsProfileSetup } from '@/utils/profileSetup';
+import { setAuthBridgeListener } from '@/services/authSessionBridge';
+import { refreshSessionTokens } from '@/services/apiClient';
+import {
+  setProactiveRefreshHandler,
+  clearProactiveRefreshSchedule,
+  rescheduleProactiveTokenRefresh,
+  refreshIfAccessTokenInBufferWindow,
+} from '@/services/proactiveTokenRefresh';
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const ACCESS_TOKEN_KEY = '@bmv_access_token';
-const REFRESH_TOKEN_KEY = '@bmv_refresh_token';
-const USER_KEY = '@bmv_user';
+type RefreshFn = (options?: { silent?: boolean }) => Promise<RefreshTokenResponse>;
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [authState, setAuthState] = useState<AuthState>({
     isAuthenticated: false,
+    needsProfileSetup: false,
     user: null,
     accessToken: null,
     refreshToken: null,
@@ -28,31 +50,119 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     error: null,
   });
 
+  const refreshForProactiveRef = useRef<RefreshFn | null>(null);
+
   useEffect(() => {
     loadAuthData();
   }, []);
 
+  useEffect(() => {
+    setAuthBridgeListener((payload) => {
+      if (payload.kind === 'tokens') {
+        setAuthState((prev) => ({
+          ...prev,
+          accessToken: payload.accessToken,
+          refreshToken: payload.refreshToken,
+        }));
+        void rescheduleProactiveTokenRefresh();
+        return;
+      }
+      clearProactiveRefreshSchedule();
+      setAuthState({
+        isAuthenticated: false,
+        needsProfileSetup: false,
+        user: null,
+        accessToken: null,
+        refreshToken: null,
+        isLoading: false,
+        error: null,
+      });
+    });
+    return () => setAuthBridgeListener(null);
+  }, []);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active' || state === 'background' || state === 'inactive') {
+        void refreshIfAccessTokenInBufferWindow();
+      }
+    });
+    return () => sub.remove();
+  }, []);
+
+  useEffect(() => {
+    if (authState.isAuthenticated && authState.accessToken && !authState.isLoading) {
+      void rescheduleProactiveTokenRefresh();
+    }
+    if (!authState.isAuthenticated) {
+      clearProactiveRefreshSchedule();
+    }
+  }, [authState.isAuthenticated, authState.accessToken, authState.isLoading]);
+
+  useEffect(() => {
+    if (!authState.isAuthenticated || authState.isLoading) {
+      return;
+    }
+    void refreshIfAccessTokenInBufferWindow();
+  }, [authState.isAuthenticated, authState.isLoading]);
+
+  useEffect(() => {
+    setProactiveRefreshHandler(async () => {
+      await refreshForProactiveRef.current?.({ silent: true });
+    });
+    return () => {
+      setProactiveRefreshHandler(null);
+      clearProactiveRefreshSchedule();
+    };
+  }, []);
+
   const loadAuthData = async () => {
     try {
-      const [accessToken, refreshToken, userStr] = await Promise.all([
+      const [accessToken, refreshToken, userStr, needsProfileSetupStr] = await Promise.all([
         AsyncStorage.getItem(ACCESS_TOKEN_KEY),
         AsyncStorage.getItem(REFRESH_TOKEN_KEY),
         AsyncStorage.getItem(USER_KEY),
+        AsyncStorage.getItem(NEEDS_PROFILE_SETUP_KEY),
       ]);
 
       if (accessToken && refreshToken && userStr) {
         const user = JSON.parse(userStr);
+
+        if (user?.phone) {
+          try {
+            await getActiveCustomerByPhone(user.phone);
+          } catch (activeCheckError) {
+            if (isInactiveAccountError(activeCheckError)) {
+              await clearAuthStorage();
+              setAuthState({
+                isAuthenticated: false,
+                needsProfileSetup: false,
+                user: null,
+                accessToken: null,
+                refreshToken: null,
+                isLoading: false,
+                error: INACTIVE_CUSTOMER_MESSAGE,
+              });
+              return;
+            }
+            console.warn('[AUTH] Active status check skipped on restore:', activeCheckError);
+          }
+        }
+
         setAuthState({
           isAuthenticated: true,
+          needsProfileSetup: needsProfileSetupStr === '1',
           user,
           accessToken,
           refreshToken,
           isLoading: false,
           error: null,
         });
+        void refreshIfAccessTokenInBufferWindow();
       } else {
         setAuthState({
           isAuthenticated: false,
+          needsProfileSetup: false,
           user: null,
           accessToken: null,
           refreshToken: null,
@@ -63,6 +173,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (error) {
       setAuthState({
         isAuthenticated: false,
+        needsProfileSetup: false,
         user: null,
         accessToken: null,
         refreshToken: null,
@@ -78,13 +189,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   ): Promise<SendOtpResponse> => {
     setAuthState((prev) => ({ ...prev, isLoading: true, error: null }));
     try {
+      try {
+        await getActiveCustomerByPhone(phone);
+      } catch (activeCheckError) {
+        if (isInactiveAccountError(activeCheckError)) {
+          throw inactiveAccountError();
+        }
+      }
+
       const response = await sendOtp(phone, deviceInfo);
       setAuthState((prev) => ({ ...prev, isLoading: false }));
       return response;
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to send OTP';
+      const inactive = isInactiveAccountError(error);
+      const errorMessage = inactive
+        ? INACTIVE_CUSTOMER_MESSAGE
+        : error instanceof Error
+          ? error.message
+          : 'Failed to send OTP';
       setAuthState((prev) => ({ ...prev, isLoading: false, error: errorMessage }));
-      throw error;
+      throw inactive ? inactiveAccountError() : error;
     }
   };
 
@@ -93,47 +217,79 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     otp: string,
     deviceInfo?: DeviceInfo,
     fullName?: string
-  ): Promise<VerifyOtpResponse> => {
+  ): Promise<VerifyOtpResult> => {
     setAuthState((prev) => ({ ...prev, isLoading: true, error: null }));
     try {
+      try {
+        await getActiveCustomerByPhone(phone);
+      } catch (activeCheckError) {
+        if (isInactiveAccountError(activeCheckError)) {
+          throw inactiveAccountError();
+        }
+      }
+
       const response = await verifyOtp(phone, otp, deviceInfo);
-      
-      // Call customers-by-phone as requested
-      const customerResponse = await getCustomerByPhone(phone);
-      
-      // If fullName is provided, call customers-me-update
+
+      let customerResponse: Awaited<ReturnType<typeof getCustomerByPhone>> | null = null;
+      try {
+        customerResponse = await getActiveCustomerByPhone(phone);
+      } catch (customerError) {
+        if (isInactiveAccountError(customerError)) {
+          throw inactiveAccountError();
+        }
+        console.warn('[AUTH] customers-by-phone failed after OTP verify:', customerError);
+      }
+
       if (fullName) {
         await updateMe({
           name: fullName,
           email: response.user.email || undefined,
           registration_source: 'mobile',
-          // other fields as null as per payload example
           address: null,
           city: null,
           state: null,
           pincode: null,
         } as any, response.accessToken);
+        try {
+          customerResponse = await getActiveCustomerByPhone(phone);
+        } catch (customerError) {
+          if (isInactiveAccountError(customerError)) {
+            throw inactiveAccountError();
+          }
+          console.warn('[AUTH] customers-by-phone re-fetch failed:', customerError);
+        }
       }
 
-      // Re-fetch customer data if updated or just use the response
-      const updatedCustomer = fullName ? await getCustomerByPhone(phone) : customerResponse;
-
+      const customerName = customerResponse?.customer?.name;
       const enrichedUser = {
         ...response.user,
-        first_name: updatedCustomer.customer?.name?.split(' ')[0] || response.user.first_name,
-        last_name: updatedCustomer.customer?.name?.split(' ').slice(1).join(' ') || response.user.last_name,
-        phone: updatedCustomer.customer?.phone || response.user.phone,
-        created_at: updatedCustomer.customer?.created_at || response.user.created_at,
+        first_name: customerName?.split(' ')[0] || response.user.first_name,
+        last_name: customerName?.split(' ').slice(1).join(' ') || response.user.last_name,
+        phone: customerResponse?.customer?.phone || response.user.phone,
+        created_at: customerResponse?.customer?.created_at || response.user.created_at,
       };
-      
-      await Promise.all([
-        AsyncStorage.setItem(ACCESS_TOKEN_KEY, response.accessToken),
-        AsyncStorage.setItem(REFRESH_TOKEN_KEY, response.refreshToken),
-        AsyncStorage.setItem(USER_KEY, JSON.stringify(enrichedUser)),
+
+      const needsProfileSetup = fullName
+        ? false
+        : resolveNeedsProfileSetup(
+            customerName,
+            enrichedUser.first_name,
+            enrichedUser.last_name
+          );
+
+      await persistSessionTokens(
+        response.accessToken,
+        response.refreshToken,
+        response.expiresIn
+      );
+      await AsyncStorage.multiSet([
+        [USER_KEY, JSON.stringify(enrichedUser)],
+        [NEEDS_PROFILE_SETUP_KEY, needsProfileSetup ? '1' : '0'],
       ]);
 
       setAuthState({
         isAuthenticated: true,
+        needsProfileSetup,
         user: enrichedUser,
         accessToken: response.accessToken,
         refreshToken: response.refreshToken,
@@ -141,11 +297,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         error: null,
       });
 
-      return response;
+      return { ...response, needsProfileSetup };
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to verify OTP';
+      const inactive = isInactiveAccountError(error);
+      const errorMessage = inactive
+        ? INACTIVE_CUSTOMER_MESSAGE
+        : error instanceof Error
+          ? error.message
+          : 'Failed to verify OTP';
       setAuthState((prev) => ({ ...prev, isLoading: false, error: errorMessage }));
-      throw error;
+      throw inactive ? inactiveAccountError() : error;
     }
   };
 
@@ -156,52 +317,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setAuthState((prev) => ({ ...prev, isLoading: false }));
       return response;
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to resend OTP';
+      const inactive = isInactiveAccountError(error);
+      const errorMessage = inactive
+        ? INACTIVE_CUSTOMER_MESSAGE
+        : error instanceof Error
+          ? error.message
+          : 'Failed to resend OTP';
       setAuthState((prev) => ({ ...prev, isLoading: false, error: errorMessage }));
-      throw error;
+      throw inactive ? inactiveAccountError() : error;
     }
   };
 
-  const handleRefreshAccessToken = async (): Promise<RefreshTokenResponse> => {
-    if (!authState.refreshToken) {
-      throw new Error('No refresh token available');
-    }
-
-    setAuthState((prev) => ({ ...prev, isLoading: true, error: null }));
+  const handleLogout = useCallback(async () => {
+    clearProactiveRefreshSchedule();
     try {
-      const response = await refreshAccessToken(authState.refreshToken);
-
-      await Promise.all([
-        AsyncStorage.setItem(ACCESS_TOKEN_KEY, response.accessToken),
-        AsyncStorage.setItem(REFRESH_TOKEN_KEY, response.refreshToken),
-      ]);
-
-      setAuthState((prev) => ({
-        ...prev,
-        accessToken: response.accessToken,
-        refreshToken: response.refreshToken,
-        isLoading: false,
-      }));
-
-      return response;
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to refresh token';
-      setAuthState((prev) => ({ ...prev, isLoading: false, error: errorMessage }));
-      await handleLogout();
-      throw error;
-    }
-  };
-
-  const handleLogout = async () => {
-    try {
-      await Promise.all([
-        AsyncStorage.removeItem(ACCESS_TOKEN_KEY),
-        AsyncStorage.removeItem(REFRESH_TOKEN_KEY),
-        AsyncStorage.removeItem(USER_KEY),
-      ]);
+      await clearAuthStorage();
 
       setAuthState({
         isAuthenticated: false,
+        needsProfileSetup: false,
         user: null,
         accessToken: null,
         refreshToken: null,
@@ -214,7 +348,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         error: 'Failed to logout',
       }));
     }
-  };
+  }, []);
+
+  const handleRefreshAccessToken = useCallback(
+    async (options?: { silent?: boolean }): Promise<RefreshTokenResponse> => {
+      const stored = await AsyncStorage.getItem(REFRESH_TOKEN_KEY);
+      if (!stored) {
+        throw new Error('No refresh token available');
+      }
+
+      if (!options?.silent) {
+        setAuthState((prev) => ({ ...prev, isLoading: true, error: null }));
+      }
+      try {
+        const result = await refreshSessionTokens();
+        setAuthState((prev) => ({
+          ...prev,
+          isLoading: options?.silent ? prev.isLoading : false,
+          accessToken: result.accessToken,
+          refreshToken: result.refreshToken,
+        }));
+        await rescheduleProactiveTokenRefresh();
+        return result;
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Failed to refresh token';
+        if (!options?.silent) {
+          setAuthState((prev) => ({ ...prev, isLoading: false, error: errorMessage }));
+        }
+        throw error;
+      }
+    },
+    []
+  );
+
+  refreshForProactiveRef.current = handleRefreshAccessToken;
 
   const handleSignOut = async (accessToken?: string) => {
     try {
@@ -243,20 +410,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         pincode: null,
       } as any, authState.accessToken);
 
-      // Re-fetch customer data to get enriched user
-      const updatedCustomer = await getCustomerByPhone(authState.user.phone);
-      
+      let customerName = fullName.trim();
+      try {
+        const updatedCustomer = await getActiveCustomerByPhone(authState.user.phone);
+        customerName = updatedCustomer.customer?.name?.trim() || customerName;
+      } catch (customerError) {
+        console.warn('[AUTH] customers-by-phone failed after name update:', customerError);
+      }
+
+      const nameParts = customerName.split(/\s+/);
       const enrichedUser = {
         ...authState.user,
-        first_name: updatedCustomer.customer?.name?.split(' ')[0] || authState.user.first_name,
-        last_name: updatedCustomer.customer?.name?.split(' ').slice(1).join(' ') || authState.user.last_name,
+        first_name: nameParts[0] || authState.user.first_name,
+        last_name: nameParts.slice(1).join(' ') || authState.user.last_name,
       };
 
-      await AsyncStorage.setItem(USER_KEY, JSON.stringify(enrichedUser));
+      await AsyncStorage.multiSet([
+        [USER_KEY, JSON.stringify(enrichedUser)],
+        [NEEDS_PROFILE_SETUP_KEY, '0'],
+      ]);
 
       setAuthState((prev) => ({
         ...prev,
         user: enrichedUser,
+        needsProfileSetup: false,
         isLoading: false,
       }));
     } catch (error) {

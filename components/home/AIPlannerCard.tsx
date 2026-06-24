@@ -1,8 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 export const AIPlannerCard = () => {
+  const router = useRouter();
+
   return (
     <View style={styles.container}>
       <View style={styles.content}>
@@ -14,7 +17,11 @@ export const AIPlannerCard = () => {
           Our AI Planner curates your dream wedding based on budget & style.
         </Text>
         
-        <TouchableOpacity style={styles.button}>
+        <TouchableOpacity
+          style={styles.button}
+          onPress={() => router.push('/(tabs)/ai-tools')}
+          accessibilityRole="button"
+          accessibilityLabel="Open AI tools">
           <Text style={styles.buttonText}>Try AI Planner</Text>
         </TouchableOpacity>
       </View>
@@ -33,7 +40,8 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     padding: 24,
     marginHorizontal: 16,
-    marginVertical: 20,
+    marginTop: 24,
+    marginBottom: 8,
     position: 'relative',
     overflow: 'hidden',
   },

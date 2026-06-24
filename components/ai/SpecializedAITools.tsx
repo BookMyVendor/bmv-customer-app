@@ -1,8 +1,10 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { View, Text, StyleSheet, TouchableOpacity, ImageBackground } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Image } from 'expo-image';
 import { Link } from 'expo-router';
+
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://49.248.202.218:5000/';
 
 function getMediaUrl(url: string | null): string | null {
@@ -14,9 +16,7 @@ function getMediaUrl(url: string | null): string | null {
 const getInitials = (name: string) => {
   if (!name) return 'V';
   const parts = name.trim().split(/\s+/);
-  if (parts.length >= 2) {
-    return (parts[0][0] + parts[1][0]).toUpperCase();
-  }
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
   return name.slice(0, 2).toUpperCase();
 };
 
@@ -44,8 +44,122 @@ const DynamicVendorImage = ({ vendor, style }: any) => {
   );
 };
 
+type Variant = 'vendor' | 'guests' | 'checklist' | 'budget';
+
+const VARIANT_COLORS: Record<Variant, { bg: string; gradient?: [string, string]; watermark: any }> = {
+  vendor: {
+    bg: '#3B1578',
+    gradient: ['#5B21B6', '#2E0F5C'],
+    watermark: 'sparkles',
+  },
+  guests: {
+    bg: '#1E3A8A',
+    gradient: ['#1E40AF', '#152C6B'],
+    watermark: 'people',
+  },
+  checklist: {
+    bg: '#0F5957',
+    gradient: ['#0F766E', '#0B4744'],
+    watermark: 'clipboard',
+  },
+  budget: {
+    bg: '#1F4D2A',
+    gradient: ['#15803D', '#163E20'],
+    watermark: 'wallet',
+  },
+};
+
+interface AIToolCardProps {
+  variant: Variant;
+  title: string;
+  description: string;
+  buttonText: string;
+  image: string;
+  href: string;
+  icon?: keyof typeof Ionicons.glyphMap;
+  badge?: string;
+}
+
+export const AIToolCard: React.FC<AIToolCardProps> = ({
+  variant,
+  title,
+  description,
+  buttonText,
+  image,
+  href,
+  icon,
+  badge,
+}) => {
+  const colors = VARIANT_COLORS[variant];
+
+  return (
+    <Link href={href as any} asChild>
+      <TouchableOpacity activeOpacity={0.92} style={styles.card}>
+        <LinearGradient
+          colors={colors.gradient || [colors.bg, colors.bg]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.cardGradient}
+        >
+          {/* Top row: content (left) + image (right) */}
+          <View style={styles.topRow}>
+            {/* LEFT - content */}
+            <View style={styles.leftCol}>
+              {badge ? (
+                <View style={styles.matchBadge}>
+                  <Ionicons name="star" size={11} color="#F59E0B" />
+                  <Text style={styles.matchBadgeText}>{badge}</Text>
+                </View>
+              ) : icon ? (
+                <View style={styles.iconBadge}>
+                  <Ionicons name={icon} size={18} color="#fff" />
+                </View>
+              ) : null}
+
+              <Text style={styles.title}>{title}</Text>
+              <Text style={styles.description}>{description}</Text>
+
+              <View style={styles.watermarkWrap}>
+                <Ionicons name={colors.watermark} size={28} color="rgba(255,255,255,0.18)" />
+              </View>
+            </View>
+
+            {/* RIGHT - image */}
+            <View style={styles.rightCol}>
+              <ImageBackground
+                source={{ uri: image }}
+                style={styles.image}
+                imageStyle={styles.imageStyle}
+              >
+                <View style={styles.expandBtn}>
+                  <Ionicons name="expand-outline" size={14} color="#0F172A" />
+                </View>
+              </ImageBackground>
+            </View>
+          </View>
+
+          {/* Bottom pill button */}
+          <View style={styles.buttonRow}>
+            <View style={styles.button}>
+              <Text style={styles.buttonText}>{buttonText}</Text>
+              <Ionicons
+                name="arrow-forward"
+                size={16}
+                color="#fff"
+                style={styles.buttonArrow}
+              />
+            </View>
+          </View>
+        </LinearGradient>
+      </TouchableOpacity>
+    </Link>
+  );
+};
+
+/* ------- Legacy exports (kept for backwards compatibility with other screens) ------- */
+
 export const QuickToolCard = ({ icon, value, label, actionText, href }: any) => (
-  <Link href={href || "#"} asChild>
+  <Link href={href || '#'} asChild>
     <TouchableOpacity style={styles.quickCard}>
       <View style={styles.quickIconCircle}>
         <Ionicons name={icon} size={24} color="#003366" />
@@ -60,109 +174,44 @@ export const QuickToolCard = ({ icon, value, label, actionText, href }: any) => 
   </Link>
 );
 
-export const AIVendorMatchCard = ({ vendorCount = 0, topVendors = [] }: { vendorCount?: number, topVendors?: any[] }) => {
-  return (
-    <View style={styles.vendorMatchCard}>
-      <View style={styles.vendorMatchHeader}>
-        <View style={styles.vendorMatchTitles}>
-          <Text style={styles.vendorMatchTitle}>AI Vendor Match</Text>
-          <Text style={styles.vendorMatchSubtitle}>
-            {vendorCount > 0 ? `${vendorCount} Top picks for your style` : 'Top picks for your style'}
-          </Text>
-        </View>
-        <TouchableOpacity style={styles.expandButton}>
-          <Ionicons name="expand-outline" size={20} color="#003366" />
-        </TouchableOpacity>
-      </View>
-      
-      <View style={styles.vendorImageRow}>
-        {topVendors.length > 0 ? (
-          topVendors.slice(0, 2).map((vendor, index) => {
-            const rating = parseFloat(vendor.calculated_rating || '0');
-            // If rating is 0, show a high match anyway (AI selection)
-            const matchPct = rating > 0 ? Math.round(rating * 20) : (95 + index);
-            
-            return (
-              <View key={vendor.business_id || index} style={styles.vendorImageContainer}>
-                <DynamicVendorImage vendor={vendor} style={styles.vendorImage} />
-                {index === 0 && (
-                  <View style={styles.matchBadge}>
-                    <Ionicons name="star" size={12} color="#F59E0B" />
-                    <Text style={styles.matchBadgeText}>{matchPct}% Match</Text>
-                  </View>
-                )}
-              </View>
-            );
-          })
-        ) : (
-          <>
-            <View style={styles.vendorImageContainer}>
-              <Image 
-                source="https://images.unsplash.com/photo-1519167758481-83f550bb49b3?auto=format&fit=crop&q=80&w=400"
-                style={styles.vendorImage}
-              />
-              <View style={styles.matchBadge}>
-                <Ionicons name="star" size={12} color="#F59E0B" />
-                <Text style={styles.matchBadgeText}>98% Match</Text>
-              </View>
-            </View>
-            <View style={styles.vendorImageContainer}>
-              <Image 
-                source="https://images.unsplash.com/photo-1542314831-068cd1dbfeeb?auto=format&fit=crop&q=80&w=400"
-                style={styles.vendorImage}
-              />
-            </View>
-          </>
-        )}
-      </View>
+export const AIVendorMatchCard = ({ vendorCount = 0, topVendors = [] }: { vendorCount?: number; topVendors?: any[] }) => (
+  <AIToolCard
+    variant="vendor"
+    badge="95% Match"
+    title="AI Vendor Match"
+    description={`Get ${vendorCount > 0 ? Math.min(vendorCount, 3) : 3} top vendor picks\nperfectly matched to your style.`}
+    buttonText="Start Side-by-Side Analysis"
+    image={
+      topVendors[0]
+        ? getMediaUrl(topVendors[0].cover_photo_url || topVendors[0].profile_image) ||
+          'https://images.unsplash.com/photo-1769638913840-2ca96d90e8a9?auto=format&fit=crop&q=80&w=600'
+        : 'https://images.unsplash.com/photo-1769638913840-2ca96d90e8a9?auto=format&fit=crop&q=80&w=600'
+    }
+    href="/ai-vendor-match"
+  />
+);
 
-      <Link href="/ai-vendor-match" asChild>
-        <TouchableOpacity style={styles.analysisButton}>
-          <Text style={styles.analysisButtonText}>Start Side-by-Side Analysis</Text>
-        </TouchableOpacity>
-      </Link>
-    </View>
-  );
-};
-
-export const AIBudgetPlannerCard = ({ totalBudget = 0, allocation = 0, label = "Catering Allocation" }: { totalBudget?: number, allocation?: number, label?: string }) => {
-  return (
-    <Link href="/ai-budget-planner" asChild>
-      <TouchableOpacity style={styles.budgetCard}>
-        <View style={styles.budgetHeader}>
-          <View style={styles.budgetTitleRow}>
-            <View style={styles.budgetIconCircle}>
-              <Ionicons name="wallet-outline" size={20} color="#fff" />
-            </View>
-            <View>
-              <Text style={styles.budgetTitle}>Budget Planner</Text>
-              {totalBudget > 0 && <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12 }}>Total: ₹{totalBudget.toLocaleString('en-IN')}</Text>}
-            </View>
-          </View>
-          <View style={styles.liveBadge}>
-            <Text style={styles.liveBadgeText}>LIVE</Text>
-          </View>
-        </View>
-        
-        <View style={styles.budgetProgressSection}>
-          <View style={styles.progressHeader}>
-            <Text style={styles.progressLabel}>{label}</Text>
-            <Text style={styles.progressValue}>{allocation}%</Text>
-          </View>
-          <View style={styles.progressBarBg}>
-            <View style={[styles.progressBarFill, { width: `${allocation}%` }]} />
-          </View>
-        </View>
-
-
-        <View style={styles.budgetFooter}>
-          <Text style={styles.budgetFooterText}>Optimized for local market</Text>
-          <Ionicons name="arrow-forward" size={16} color="#fff" />
-        </View>
-      </TouchableOpacity>
-    </Link>
-  );
-};
+export const AIBudgetPlannerCard = ({
+  totalBudget = 0,
+}: {
+  totalBudget?: number;
+  allocation?: number;
+  label?: string;
+}) => (
+  <AIToolCard
+    variant="budget"
+    icon="wallet"
+    title="Budget Planner"
+    description={
+      totalBudget > 0
+        ? `Total: ₹${totalBudget.toLocaleString('en-IN')}\nPlan smart, stay within budget.`
+        : `Plan smart, track expenses\nand stay within budget.`
+    }
+    buttonText="Open Budget Planner"
+    image="https://images.unsplash.com/photo-1762319021727-c73a939c4f3b?auto=format&fit=crop&q=80&w=600"
+    href="/ai-budget-planner"
+  />
+);
 
 export const AIToolLinkCard = ({ title, description, icon, linkText, href }: any) => (
   <View style={styles.linkCard}>
@@ -172,7 +221,7 @@ export const AIToolLinkCard = ({ title, description, icon, linkText, href }: any
     <View style={styles.linkContent}>
       <Text style={styles.linkTitle}>{title}</Text>
       <Text style={styles.linkDescription}>{description}</Text>
-      <Link href={href || "#"} asChild>
+      <Link href={href || '#'} asChild>
         <TouchableOpacity style={styles.linkAction}>
           <Text style={styles.linkActionText}>{linkText}</Text>
           <Ionicons name="chevron-forward" size={16} color="#003366" />
@@ -182,8 +231,128 @@ export const AIToolLinkCard = ({ title, description, icon, linkText, href }: any
   </View>
 );
 
+const CARD_RADIUS = 22;
+
 const styles = StyleSheet.create({
-  // Quick Tool Card
+  card: {
+    borderRadius: CARD_RADIUS,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.12,
+    shadowRadius: 14,
+    elevation: 5,
+  },
+  cardGradient: {
+    borderRadius: CARD_RADIUS,
+    padding: 14,
+  },
+  topRow: {
+    flexDirection: 'row',
+    minHeight: 150,
+  },
+  leftCol: {
+    flex: 1,
+    paddingRight: 10,
+    paddingLeft: 4,
+    paddingTop: 4,
+    justifyContent: 'flex-start',
+  },
+  rightCol: {
+    flex: 1,
+    borderRadius: 14,
+    overflow: 'hidden',
+  },
+  image: {
+    flex: 1,
+    minHeight: 150,
+  },
+  imageStyle: {
+    borderRadius: 14,
+  },
+  expandBtn: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 26,
+    height: 26,
+    borderRadius: 7,
+    backgroundColor: '#fff',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  matchBadge: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    gap: 4,
+    marginBottom: 14,
+  },
+  matchBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  iconBadge: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 14,
+  },
+  title: {
+    fontSize: 19,
+    fontWeight: '800',
+    color: '#fff',
+    marginBottom: 6,
+    lineHeight: 23,
+  },
+  description: {
+    fontSize: 12.5,
+    color: 'rgba(255,255,255,0.85)',
+    lineHeight: 17,
+    fontWeight: '500',
+  },
+  watermarkWrap: {
+    marginTop: 'auto',
+    paddingTop: 12,
+  },
+  buttonRow: {
+    marginTop: 12,
+  },
+  button: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.45)',
+    borderRadius: 999,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+  },
+  buttonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  buttonArrow: {
+    position: 'absolute',
+    right: 18,
+  },
+
+  /* ---------- legacy (used by other screens) ---------- */
   quickCard: {
     flex: 1,
     backgroundColor: '#fff',
@@ -226,195 +395,16 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#003366',
   },
-
-  // AI Vendor Match Card
-  vendorMatchCard: {
-    backgroundColor: '#fff',
-    borderRadius: 24,
-    padding: 20,
-    marginBottom: 24,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    elevation: 3,
-  },
-  vendorMatchHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  vendorMatchTitles: {
-    flex: 1,
-  },
-  vendorMatchTitle: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#1A1A1A',
-    marginBottom: 4,
-  },
-  vendorMatchSubtitle: {
-    fontSize: 14,
-    color: '#999',
-    fontWeight: '500',
-  },
-  expandButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#F0F5FF',
+  initialsContainer: {
+    backgroundColor: '#003366',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  vendorImageRow: {
-    flexDirection: 'row',
-    gap: 1,
-    height: 180,
-    borderRadius: 16,
-    overflow: 'hidden',
-    marginBottom: 20,
-  },
-  vendorImageContainer: {
-    flex: 1,
-    height: '100%',
-  },
-  vendorImage: {
-    width: '100%',
-    height: '100%',
-  },
-  matchBadge: {
-    position: 'absolute',
-    top: 12,
-    left: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 20,
-    gap: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  matchBadgeText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#003366',
-  },
-  analysisButton: {
-    backgroundColor: '#003366',
-    paddingVertical: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-    shadowColor: '#003366',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  analysisButtonText: {
+  initialsText: {
     color: '#fff',
-    fontSize: 15,
+    fontSize: 32,
     fontWeight: '800',
   },
-
-  // Budget Planner Card
-  budgetCard: {
-    backgroundColor: '#003366',
-    borderRadius: 24,
-    padding: 20,
-    marginBottom: 24,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 10,
-    elevation: 3,
-  },
-  budgetHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 24,
-  },
-  budgetTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  budgetIconCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 8,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  budgetTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#fff',
-  },
-  liveBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 4,
-    borderWidth: 1,
-    borderColor: '#F59E0B',
-  },
-  liveBadgeText: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#F59E0B',
-  },
-  budgetProgressSection: {
-    backgroundColor: 'rgba(255,255,255,0.05)',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
-  },
-  progressHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 12,
-  },
-  progressLabel: {
-    fontSize: 14,
-    color: 'rgba(255,255,255,0.7)',
-    fontWeight: '500',
-  },
-  progressValue: {
-    fontSize: 14,
-    color: '#fff',
-    fontWeight: '700',
-  },
-  progressBarBg: {
-    height: 6,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    borderRadius: 3,
-  },
-  progressBarFill: {
-    height: '100%',
-    backgroundColor: '#F59E0B',
-    borderRadius: 3,
-  },
-  budgetFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  budgetFooterText: {
-    fontSize: 14,
-    color: 'rgba(255,255,255,0.8)',
-    fontWeight: '500',
-  },
-
-  // Link Cards (keep for now)
   linkCard: {
     backgroundColor: '#fff',
     borderRadius: 24,
@@ -458,14 +448,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#003366',
   },
-  initialsContainer: {
-    backgroundColor: '#003366',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  initialsText: {
-    color: '#fff',
-    fontSize: 32,
-    fontWeight: '800',
-  },
 });
+
+export { DynamicVendorImage };

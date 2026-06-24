@@ -98,12 +98,19 @@ export async function submitCustomerReview(
     const headers: HeadersInit = {
       Authorization: `Bearer ${accessToken}`,
     };
-    const response = await apiPost<SubmitCustomerReviewResponse>(
+    const response = await apiPost<Record<string, unknown>>(
       'functions/v1/submit-customer-review',
       request,
       headers
     );
-    return response;
+    const reviewId =
+      (response.reviewId as string | undefined) ||
+      (response.review_id as string | undefined) ||
+      ((response.review as { id?: string } | undefined)?.id ?? '');
+    return {
+      success: Boolean(response.success),
+      reviewId,
+    };
   } catch (error) {
     const apiError = error as any;
     throw new Error(apiError.error || 'Failed to submit review');
@@ -111,10 +118,13 @@ export async function submitCustomerReview(
 }
 
 export async function uploadReviewImages(
-  reviewId: string,
+  reviewId: string | undefined,
   images: File[],
   accessToken: string
 ): Promise<any> {
+  if (!reviewId) {
+    throw new Error('Missing review ID for image upload');
+  }
   try {
     const headers: HeadersInit = {
       Authorization: `Bearer ${accessToken}`,

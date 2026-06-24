@@ -85,6 +85,17 @@ export const CategoryGrid = () => {
     return '#F8F9FB';
   };
 
+  const getBorderColorForCategory = (category: CategoryTreeNode): string => {
+    const name = category.name.toLowerCase();
+    if (name.includes('wedding')) return '#FFD6E0';
+    if (name.includes('birthday')) return '#D4E8FF';
+    if (name.includes('cater')) return '#FFE8CC';
+    if (name.includes('photo')) return '#C8F5D4';
+    if (name.includes('decor') || name.includes('mandap')) return '#E0D4FF';
+    if (name.includes('venue')) return '#C8EBFF';
+    return '#E2E6EA';
+  };
+
   const getCategoryDisplayName = (category: CategoryTreeNode): string => {
     const name = category.name;
     if (name === 'Decoration / Mandap') return 'Decor';
@@ -109,12 +120,20 @@ export const CategoryGrid = () => {
           {categories.map((cat) => (
             <View key={cat.id} style={styles.categoryItem}>
               <TouchableOpacity 
-                style={[styles.iconCard, { backgroundColor: getColorForCategory(cat) }]}
+                style={[
+                  styles.iconCard,
+                  {
+                    backgroundColor: getColorForCategory(cat),
+                    borderColor: getBorderColorForCategory(cat),
+                  },
+                ]}
                 onPress={() => handleCategoryPress(cat)}
               >
-                <Ionicons name={getIconForCategory(cat)} size={28} color="#003366" />
+                <Ionicons name={getIconForCategory(cat)} size={26} color="#003366" />
               </TouchableOpacity>
-              <Text style={styles.categoryName}>{getCategoryDisplayName(cat)}</Text>
+              <Text style={styles.categoryName} numberOfLines={2} ellipsizeMode="tail">
+                {getCategoryDisplayName(cat)}
+              </Text>
             </View>
           ))}
         </ScrollView>
@@ -146,7 +165,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 18,
-    fontWeight: '600',
+    fontWeight: '700',
     color: '#1A1A1A',
   },
   viewAll: {
@@ -163,20 +182,27 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
     marginRight: 14,
+    maxWidth: 80,
   },
   iconCard: {
-    width: 80,
-    height: 80,
-    borderRadius: 20,
+    width: 72,
+    height: 72,
+    borderRadius: 18,
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#f0f0f0',
+    borderWidth: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 2,
   },
   categoryName: {
-    fontSize: 13,
-    fontWeight: '500',
-    color: '#444',
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#1A1A1A',
+    textAlign: 'center',
+    width: '100%',
   },
   loadingContainer: {
     paddingVertical: 20,

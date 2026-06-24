@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -12,11 +12,13 @@ import {
   KeyboardAvoidingView,
   Platform,
   FlatList,
+  useWindowDimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { getCategoryTree } from '@/services/categoryService';
 import { CategoryTreeNode } from '@/types/category.types';
 import { submitCustomerLead } from '@/services/leadService';
+import { notifyQuotesChanged } from '@/utils/quoteRefreshBus';
 import { VendorResult } from '@/services/vendorSearchService';
 
 interface BulkQuoteModalProps {
@@ -34,6 +36,14 @@ export default function BulkQuoteModal({
   user,
   accessToken,
 }: BulkQuoteModalProps) {
+  const { height: windowHeight } = useWindowDimensions();
+  const formScrollRef = useRef<ScrollView>(null);
+  const scrollFormToFocusedInput = useCallback(() => {
+    requestAnimationFrame(() => {
+      formScrollRef.current?.scrollToEnd({ animated: true });
+    });
+  }, []);
+
   const [loading, setLoading] = useState(false);
   const [categories, setCategories] = useState<CategoryTreeNode[]>([]);
   const [showEventDropdown, setShowEventDropdown] = useState(false);
@@ -110,7 +120,12 @@ export default function BulkQuoteModal({
       );
 
       const failures = (results as any[]).filter(r => !r.success);
-      
+      const successCount = vendors.length - failures.length;
+
+      if (successCount > 0) {
+        notifyQuotesChanged(successCount);
+      }
+
       if (failures.length === 0) {
         Alert.alert('Success', `Quote requests have been sent successfully to all ${vendors.length} vendors!`);
         onClose();
@@ -230,8 +245,8 @@ export default function BulkQuoteModal({
       onRequestClose={onClose}
     >
       <View style={styles.modalOverlay}>
-        <KeyboardAvoidingView 
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        <KeyboardAvoidingView
+          behavior="padding"
           style={styles.modalContainer}
         >
           <View style={styles.modalContent}>
@@ -242,7 +257,14 @@ export default function BulkQuoteModal({
               </TouchableOpacity>
             </View>
 
-            <ScrollView showsVerticalScrollIndicator={false} style={styles.formScroll}>
+            <ScrollView
+              ref={formScrollRef}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
+              style={[styles.formScroll, { maxHeight: Math.min(480, windowHeight * 0.42) }]}
+              contentContainerStyle={styles.formScrollContent}
+            >
               <Text style={styles.vendorNotice}>
                 Requesting quotes for: <Text style={styles.vendorNameHighlight}>{vendors.map(v => v.business_name).join(', ')}</Text>
               </Text>
@@ -331,6 +353,7 @@ export default function BulkQuoteModal({
                   onChangeText={(text) => setFormData({ ...formData, guestCount: text })}
                   placeholder="Approx. guest count"
                   keyboardType="numeric"
+                  onFocus={scrollFormToFocusedInput}
                 />
               </View>
 
@@ -344,6 +367,8 @@ export default function BulkQuoteModal({
                   multiline
                   numberOfLines={4}
                   textAlignVertical="top"
+                  onFocus={scrollFormToFocusedInput}
+                  onContentSizeChange={scrollFormToFocusedInput}
                 />
               </View>
             </ScrollView>
@@ -406,8 +431,12 @@ const styles = StyleSheet.create({
     padding: 4,
   },
   formScroll: {
-    padding: 20,
-    maxHeight: 500,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+  },
+  formScrollContent: {
+    paddingBottom: 28,
+    flexGrow: 1,
   },
   vendorNotice: {
     fontSize: 14,
