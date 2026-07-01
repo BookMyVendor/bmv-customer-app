@@ -7,7 +7,7 @@ import {
   ActivityIndicator,
   TouchableOpacity,
 } from 'react-native';
-import { useLocalSearchParams, Stack } from 'expo-router';
+import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
 import { useAuth } from '@/context/AuthContext';
@@ -70,6 +70,7 @@ function MessageBubble({ item }: { item: LeadCommunication }) {
 
 export default function MyQuoteDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  const router = useRouter();
   const { accessToken } = useAuth();
   const [lead, setLead] = useState<CustomerLeadDetail | null>(null);
   const [communications, setCommunications] = useState<LeadCommunication[]>([]);
